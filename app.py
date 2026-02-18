@@ -24,28 +24,41 @@ st.markdown("""
         border: 2px solid #1f77b4 !important;
         border-radius: 5px !important;
         background-color: white !important;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
     }
 
-    /* ★チェックボックスをボタンの見た目に改造 */
+    /* チェックボックスをプルダウンと同じ幅のボタンに改造 */
     div[data-testid="stCheckbox"] {
+        width: 100% !important;
         background-color: #f0f2f6;
         border-radius: 5px;
-        padding: 10px 15px;
         border: 1px solid #dcdfe6;
-        transition: all 0.3s;
-        text-align: center;
+        transition: all 0.2s;
+        margin-bottom: 10px;
+        display: flex;
+        justify-content: center;
     }
-    /* ON状態の時の色指定 */
+    
+    /* ラベルを枠いっぱいに広げて中央揃え */
+    div[data-testid="stCheckbox"] label {
+        width: 100% !important;
+        padding: 10px 0px !important;
+        justify-content: center !important;
+        cursor: pointer;
+        margin: 0 !important;
+    }
+
+    /* ON状態の時のデザイン（赤背景・白文字） */
     div[data-testid="stCheckbox"]:has(input:checked) {
-        background-color: #ff4b4b; /* 不足表示ONの時は目立つ赤に */
+        background-color: #ff4b4b;
         border-color: #ff4b4b;
     }
     div[data-testid="stCheckbox"]:has(input:checked) label {
         color: white !important;
         font-weight: bold;
     }
-    /* チェックボックスの小さな四角自体は消す */
+
+    /* チェックボックスの小さな四角自体は非表示 */
     div[data-testid="stCheckbox"] [data-testid="stWidgetLabel"] span:first-child {
         display: none;
     }
@@ -58,10 +71,15 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# セッション状態の初期化
+if 'selected_product' not in st.session_state:
+    st.session_state.selected_product = "全表示"
+
 # --- 1. 左画面（サイドバー）：操作パネル ---
 with st.sidebar:
     st.markdown("### 🔍 絞り込み設定")
     
+    # 製品名リストの作成
     product_options = ["全表示"]
     if st.session_state.get('req'):
         try:
@@ -72,15 +90,15 @@ with st.sidebar:
         except:
             pass
 
-    # 1. 製品名プルダウン
+    # 1. 製品名プルダウン（青枠付き）
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 2. ボタン型トグル（見た目はボタン、機能はトグル）
-    # checkboxをCSSでボタン化しています
+    # 2. ボタン型トグルスイッチ（幅100%）
     show_shortage_only = st.checkbox("🚨 不足原料のみを表示", value=False)
 
     st.divider()
     st.markdown("### 📁 データ読込")
+    # 取込順序：所要量 → 発注 → 在庫
     st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
     st.file_uploader("2. 発注リスト", type=['xlsx', 'xls'], key="ord")
     st.file_uploader("3. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
@@ -95,11 +113,14 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         df_ord = pd.read_excel(st.session_state.ord, header=4)
         df_req.columns = df_req.columns.str.strip()
         
+        # 1. 計算実行
         df_raw_result = create_pivot(df_req, df_inv, df_ord)
         
+        # 列名変更：現在庫 → 前日在庫
         if '現在庫' in df_raw_result.columns:
             df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
         
+        # 2. 除外フィルタ
         exclude_mask = (
             df_raw_result['品番'].isin(EXCLUDE_PART_NUMBERS) | 
             df_raw_result['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
@@ -111,10 +132,12 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         
         df_filtered = df_raw_result.drop(index=all_exclude_indices, errors='ignore').reset_index(drop=True)
         
+        # --- 表示用の加工（空白化処理） ---
         display_df = df_filtered.copy()
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
+        # 3. フィルタ：製品名
         if st.session_state.selected_product != "全表示":
             col_h_name = df_req.columns[7]
             col_c_name = df_req.columns[2]
@@ -127,6 +150,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         all_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
+        # 4. フィルタ：不足原料のみ
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             date_cols = display_df.columns[4:]
@@ -139,6 +163,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         all_shortage_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
 
+        # マイナス値を赤字にする
         def color_negative_red(val):
             if isinstance(val, (int, float)) and val < 0:
                 return 'color: red; font-weight: bold;'
