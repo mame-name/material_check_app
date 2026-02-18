@@ -66,7 +66,6 @@ with col1:
     if st.button("🔄 全表示に戻す", use_container_width=True):
         st.session_state.filter_mode = 'all'
 
-    st.divider()
     st.markdown("##### 📁 データ読込")
     
     # ★順番を変更しました
