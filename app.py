@@ -3,6 +3,34 @@ import pandas as pd
 from calc import create_pivot
 
 st.set_page_config(layout="wide", page_title="生産管理システム")
+
+# --- 独立スクロールのためのカスタムCSS ---
+st.markdown("""
+    <style>
+    /* 左カラムの固定 */
+    [data-testid="stColumn"]:nth-child(1) {
+        position: sticky;
+        top: 2rem;
+        height: calc(100vh - 4rem);
+        overflow-y: auto;
+    }
+    /* 右カラムの独立スクロール設定 */
+    [data-testid="stColumn"]:nth-child(2) {
+        height: calc(100vh - 4rem);
+        overflow-y: auto;
+        padding-right: 1rem;
+    }
+    /* スクロールバーのデザイン調整（任意） */
+    ::-webkit-scrollbar {
+        width: 8px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 4px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 st.title("📉 在庫・所要量推移シミュレーション")
 
 col1, col2 = st.columns([3, 7])
@@ -18,12 +46,10 @@ with col2:
     
     if file_req and file_inv and file_ord:
         try:
-            # 各Excelの読み込み
             df_req = pd.read_excel(file_req, header=3)
             df_inv = pd.read_excel(file_inv, header=4)
             df_ord = pd.read_excel(file_ord, header=4)
             
-            # 計算実行（引数を3つに戻しました）
             df_result = create_pivot(df_req, df_inv, df_ord)
             
             def color_negative_red(val):
@@ -31,10 +57,11 @@ with col2:
                     return 'color: red; font-weight: bold;'
                 return None
 
+            # heightを大きめに設定、または None にしてコンテナに任せる
             st.dataframe(
                 df_result.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
                 use_container_width=True,
-                height=800,
+                height=1000, 
                 hide_index=True,
                 column_config={
                     "品番": st.column_config.TextColumn("品番", pinned=True),
@@ -44,4 +71,4 @@ with col2:
         except Exception as e:
             st.error(f"エラーが発生しました: {e}")
     else:
-        st.info("左側の3つのファイルをアップロードしてください。")
+        st.info("左側で3つのファイルをアップロードしてください。")
