@@ -46,7 +46,6 @@ with col1:
     
     # 1段目：製品名プルダウン
     selected_product_name = "全表示"
-    # st.session_state.req (アップローダーのkey) を参照
     if st.session_state.get('req'):
         try:
             df_req_raw = pd.read_excel(st.session_state.req, header=3)
@@ -66,20 +65,20 @@ with col1:
     # 3段目：全表示ボタン
     if st.button("🔄 全表示に戻す", use_container_width=True):
         st.session_state.filter_mode = 'all'
-        # rerunを使わず、状態だけ変えてそのまま下の処理へ流す
 
     st.divider()
     st.markdown("##### 📁 データ読込")
-    # keyを指定することで、ボタン押下後もファイルデータが session_state 内に保持されます
+    
+    # ★順番を変更しました
     file_req = st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
-    file_inv = st.file_uploader("2. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
-    file_ord = st.file_uploader("3. 発注リスト", type=['xlsx', 'xls'], key="ord")
+    file_ord = st.file_uploader("2. 発注リスト", type=['xlsx', 'xls'], key="ord")
+    file_inv = st.file_uploader("3. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
 
 with col2:
     st.markdown("<h1 style='text-align: center;'>原料在庫シミュレーション</h1>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # file_req などの変数ではなく session_state 内のデータで判定
+    # セッション内のデータが全て揃っているかチェック
     if st.session_state.get('req') and st.session_state.get('inv') and st.session_state.get('ord'):
         try:
             df_req = pd.read_excel(st.session_state.req, header=3)
@@ -90,7 +89,7 @@ with col2:
             # 1. 計算実行
             df_raw_result = create_pivot(df_req, df_inv, df_ord)
             
-            # 2. 除外フィルタ（品番・キーワードを3行セットで削除）
+            # 2. 除外フィルタ（3行セットで削除）
             exclude_mask = (
                 df_raw_result['品番'].isin(EXCLUDE_PART_NUMBERS) | 
                 df_raw_result['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
@@ -116,7 +115,7 @@ with col2:
                             all_indices.append(idx + offset)
                 display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-            # 4. フィルタ：不足原料のみ（ボタン押下時の状態）
+            # 4. フィルタ：不足原料のみ
             if st.session_state.filter_mode == 'shortage':
                 stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
                 date_cols = display_df.columns[4:]
@@ -129,7 +128,7 @@ with col2:
                             all_shortage_indices.append(idx + offset)
                 display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
 
-            # --- 表示 ---
+            # 表示
             def color_negative_red(val):
                 if isinstance(val, (int, float)) and val < 0:
                     return 'color: red; font-weight: bold;'
