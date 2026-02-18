@@ -9,7 +9,7 @@ st.set_page_config(layout="wide", page_title="生産管理システム")
 EXCLUDE_PART_NUMBERS = ["1999999"]
 EXCLUDE_KEYWORDS = ["半製品"]
 
-# --- UIデザイン ---
+# --- UIデザイン（CSS） ---
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -18,35 +18,41 @@ st.markdown("""
         border-right: 1px solid #e9ecef;
     }
     header {visibility: hidden;}
-    
-    /* プルダウンの枠線デザイン */
+
+    /* プルダウンの枠線デザイン（青枠） */
     div[data-baseweb="select"] {
         border: 2px solid #1f77b4 !important;
         border-radius: 5px !important;
-        margin-bottom: 5px;
+        background-color: white !important;
     }
     
+    /* アップローダーのデザイン */
     .stFileUploader { border: 1px solid #e6e9ef; border-radius: 10px; padding: 5px; }
     [data-testid="stFileUploaderSmallNumber"] { display: none !important; }
     [data-testid="stFileUploaderDropzoneInstructions"] { display: none !important; }
     [data-testid="stFileUploader"] section { padding: 0px 10px !important; min-height: 50px !important; }
     
+    /* ボタンのデザイン */
     div.stButton > button {
         width: 100%;
         height: 45px;
         border-radius: 5px;
-        margin-top: 10px;
+        margin-bottom: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# セッション状態の管理
-if 'show_shortage' not in st.session_state:
-    st.session_state.show_shortage = False
+# セッション状態の初期化
+if 'filter_mode' not in st.session_state:
+    st.session_state.filter_mode = 'all'
+if 'selected_product' not in st.session_state:
+    st.session_state.selected_product = "全表示"
 
-# --- 1. 左画面（サイドバー） ---
+# --- 1. 左画面（サイドバー）：操作パネル ---
 with st.sidebar:
     st.markdown("### 🔍 絞り込み設定")
+    
+    # 製品名リストの作成
     product_options = ["全表示"]
     if st.session_state.get('req'):
         try:
@@ -57,25 +63,21 @@ with st.sidebar:
         except:
             pass
 
-    # プルダウン（枠線付き）
+    # プルダウン（青枠付き）
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # ボタン一つで状態をトグル（切り替え）
-    btn_label = "✅ 全表示に戻す" if st.session_state.show_shortage else "🚨 不足原料のみを表示"
-    if st.button(btn_label, use_container_width=True):
-        st.session_state.show_shortage = not st.session_state.show_shortage
-        # 不足表示をオフにした時、ついでにプルダウンもリセットしたい場合は以下を有効化
-        if not st.session_state.show_shortage:
-            st.session_state.selected_product = "全表示"
-        st.rerun()
+    # 不足表示ボタン
+    if st.button("🚨 不足原料のみを表示", use_container_width=True):
+        st.session_state.filter_mode = 'shortage'
 
     st.divider()
     st.markdown("### 📁 データ読込")
+    # 指定の順番：所要量 → 発注 → 在庫
     st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
     st.file_uploader("2. 発注リスト", type=['xlsx', 'xls'], key="ord")
     st.file_uploader("3. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
 
-# --- 2. 右画面（メインエリア） ---
+# --- 2. 右画面（メインエリア）：結果表示 ---
 st.markdown("<h3 style='text-align: center; margin-top: -20px;'>原料在庫シミュレーション</h3>", unsafe_allow_html=True)
 
 if st.session_state.get('req') and st.session_state.get('inv') and st.session_state.get('ord'):
@@ -85,13 +87,14 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         df_ord = pd.read_excel(st.session_state.ord, header=4)
         df_req.columns = df_req.columns.str.strip()
         
+        # 1. 計算実行
         df_raw_result = create_pivot(df_req, df_inv, df_ord)
         
-        # 列名変更
+        # 列名変更：現在庫 → 前日在庫
         if '現在庫' in df_raw_result.columns:
             df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
         
-        # 除外フィルタ
+        # 2. 除外フィルタ（品番・キーワード）
         exclude_mask = (
             df_raw_result['品番'].isin(EXCLUDE_PART_NUMBERS) | 
             df_raw_result['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
@@ -106,10 +109,11 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         # --- 表示用の加工（空白化処理） ---
         display_df = df_filtered.copy()
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
+        # 要求量以外の行（納品数・在庫残）の前日在庫を空白にする
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
         # 3. フィルタ：製品名
-        if st.session_state.get('selected_product') and st.session_state.selected_product != "全表示":
+        if st.session_state.selected_product != "全表示":
             col_h_name = df_req.columns[7]
             col_c_name = df_req.columns[2]
             matched_materials = df_req[df_req[col_h_name] == st.session_state.selected_product][col_c_name].unique().tolist()
@@ -121,8 +125,8 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         all_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # 4. フィルタ：不足原料のみ（トグル状態を参照）
-        if st.session_state.show_shortage:
+        # 4. フィルタ：不足原料のみ
+        if st.session_state.filter_mode == 'shortage':
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             date_cols = display_df.columns[4:]
             shortage_mask = (stock_rows[date_cols] < 0).any(axis=1)
@@ -134,11 +138,13 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         all_shortage_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
 
+        # マイナス値を赤字にするスタイル設定
         def color_negative_red(val):
             if isinstance(val, (int, float)) and val < 0:
                 return 'color: red; font-weight: bold;'
             return None
 
+        # 表の表示
         if not display_df.empty:
             st.dataframe(
                 display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
@@ -149,7 +155,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 }
             )
         else:
-            st.info("表示可能なデータがありません。")
+            st.info("条件に一致するデータがありません。")
             
     except Exception as e:
         st.error(f"解析エラー: {e}")
