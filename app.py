@@ -24,6 +24,13 @@ st.markdown("""
         border: 2px solid #1f77b4 !important;
         border-radius: 5px !important;
         background-color: white !important;
+        margin-bottom: 15px; /* スイッチとの間隔 */
+    }
+    
+    /* トグルスイッチのラベルを少し太くする */
+    [data-testid="stWidgetLabel"] p {
+        font-weight: bold;
+        color: #31333F;
     }
     
     /* アップローダーのデザイン */
@@ -31,20 +38,10 @@ st.markdown("""
     [data-testid="stFileUploaderSmallNumber"] { display: none !important; }
     [data-testid="stFileUploaderDropzoneInstructions"] { display: none !important; }
     [data-testid="stFileUploader"] section { padding: 0px 10px !important; min-height: 50px !important; }
-    
-    /* ボタンのデザイン */
-    div.stButton > button {
-        width: 100%;
-        height: 45px;
-        border-radius: 5px;
-        margin-bottom: 10px;
-    }
     </style>
     """, unsafe_allow_html=True)
 
 # セッション状態の初期化
-if 'filter_mode' not in st.session_state:
-    st.session_state.filter_mode = 'all'
 if 'selected_product' not in st.session_state:
     st.session_state.selected_product = "全表示"
 
@@ -63,16 +60,16 @@ with st.sidebar:
         except:
             pass
 
-    # プルダウン（青枠付き）
+    # 1. 製品名プルダウン（青枠付き）
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 不足表示ボタン
-    if st.button("🚨 不足原料のみを表示", use_container_width=True):
-        st.session_state.filter_mode = 'shortage'
+    # 2. 不足原料フィルタをトグルスイッチに変更
+    # key="filter_mode" を指定することで、以前のロジック（st.session_state.filter_mode）を活かします
+    # ただしトグルはTrue/Falseを返すため、下の表示ロジック部分を少し調整しています
+    show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
 
     st.divider()
     st.markdown("### 📁 データ読込")
-    # 指定の順番：所要量 → 発注 → 在庫
     st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
     st.file_uploader("2. 発注リスト", type=['xlsx', 'xls'], key="ord")
     st.file_uploader("3. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
@@ -87,14 +84,11 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         df_ord = pd.read_excel(st.session_state.ord, header=4)
         df_req.columns = df_req.columns.str.strip()
         
-        # 1. 計算実行
         df_raw_result = create_pivot(df_req, df_inv, df_ord)
         
-        # 列名変更：現在庫 → 前日在庫
         if '現在庫' in df_raw_result.columns:
             df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
         
-        # 2. 除外フィルタ（品番・キーワード）
         exclude_mask = (
             df_raw_result['品番'].isin(EXCLUDE_PART_NUMBERS) | 
             df_raw_result['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
@@ -106,10 +100,8 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         
         df_filtered = df_raw_result.drop(index=all_exclude_indices, errors='ignore').reset_index(drop=True)
         
-        # --- 表示用の加工（空白化処理） ---
         display_df = df_filtered.copy()
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
-        # 要求量以外の行（納品数・在庫残）の前日在庫を空白にする
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
         # 3. フィルタ：製品名
@@ -125,8 +117,8 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         all_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # 4. フィルタ：不足原料のみ
-        if st.session_state.filter_mode == 'shortage':
+        # 4. フィルタ：不足原料のみ（トグルの状態を参照）
+        if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             date_cols = display_df.columns[4:]
             shortage_mask = (stock_rows[date_cols] < 0).any(axis=1)
@@ -138,13 +130,11 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         all_shortage_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
 
-        # マイナス値を赤字にするスタイル設定
         def color_negative_red(val):
             if isinstance(val, (int, float)) and val < 0:
                 return 'color: red; font-weight: bold;'
             return None
 
-        # 表の表示
         if not display_df.empty:
             st.dataframe(
                 display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
