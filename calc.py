@@ -47,8 +47,8 @@ def create_pivot(df_req, df_inv):
         
         # 2段目: 結合風（空白）
         stock_row = {
-            '品番': None, 
-            '品名': None, 
+            '品番': "", 
+            '品名': "", 
             '現在庫': None, 
             '区分': '在庫残 (＝)'
         }
@@ -65,7 +65,7 @@ def create_pivot(df_req, df_inv):
         rows.append(stock_row)
     
     result_df = pd.DataFrame(rows)
-    fixed_cols = ['品番', '品名', '現在庫', '区分']
+    fixed_cols = ['品番', '品名']
     final_cols = fixed_cols + date_labels
     
     return result_df[final_cols]
