@@ -5,16 +5,6 @@ from calc import process_receipts, create_pivot
 st.set_page_config(layout="wide", page_title="生産管理システム")
 st.title("📉 在庫・所要量推移シミュレーション")
 
-# --- CSS: テーブルの見た目を調整 ---
-st.markdown("""
-    <style>
-    /* テーブル全体のフォントサイズを少し小さくして視認性を上げる */
-    .stDataFrame {
-        font-size: 12px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
 col1, col2 = st.columns([3, 7])
 
 with col1:
@@ -33,26 +23,20 @@ with col2:
             
             df_result = create_pivot(df_req, df_inv)
             
+            # スタイル設定：マイナス値を赤字に
             def color_negative_red(val):
                 if isinstance(val, (int, float)) and val < 0:
                     return 'color: red; font-weight: bold;'
                 return None
 
-            # --- 列固定の設定 ---
-            # column_config を使用して、左側の4列の幅を固定し、ピン留めを促します
+            # 表示設定：小数点3位、欠損値（None）は空白("")で表示
             st.dataframe(
                 df_result.style.applymap(color_negative_red).format(precision=3, na_rep=""),
                 use_container_width=True,
                 height=750,
-                hide_index=True,
-                column_config={
-                    "品番": st.column_config.TextColumn(pinned=True, width="medium"),
-                    "品名": st.column_config.TextColumn(pinned=True, width="large"),
-                    "現在庫": st.column_config.NumberColumn(pinned=True, width="small"),
-                    "区分": st.column_config.TextColumn(pinned=True, width="small"),
-                }
+                hide_index=True
             )
         except Exception as e:
             st.error(f"エラーが発生しました: {e}")
     else:
-        st.info("左側で「所要量」と「在庫」をアップロードしてください。")
+        st.info("左側で「所要量」と「在庫」の2つのファイルをアップロードしてください。")
