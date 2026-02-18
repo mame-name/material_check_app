@@ -38,10 +38,10 @@ with col1:
 
     if file_req:
         try:
-            # G列（製品名）をリスト化
+            # （製品名）をリスト化
             df_req_raw = pd.read_excel(file_req, header=3)
             df_req_raw.columns = df_req_raw.columns.str.strip()
-            col_g_name = df_req_raw.columns[6] # 7列目(G列)
+            col_g_name = df_req_raw.columns[7]
             
             # 空白を除去して重複排除
             product_list = df_req_raw[col_g_name].dropna().unique().tolist()
