@@ -4,24 +4,16 @@ from calc import create_pivot
 
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
-# --- UIデザイン（変更なし） ---
+# --- UIデザイン（アップローダー薄型化・独立スクロール） ---
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
     [data-testid="stColumn"]:nth-child(1) {
-        position: sticky;
-        top: 0;
-        height: 100vh;
-        overflow-y: auto;
-        background-color: #ffffff;
-        padding: 2rem;
-        border-right: 2px solid #e9ecef;
+        position: sticky; top: 0; height: 100vh; overflow-y: auto;
+        background-color: #ffffff; padding: 2rem; border-right: 2px solid #e9ecef;
     }
     [data-testid="stColumn"]:nth-child(2) {
-        height: 100vh;
-        overflow-y: auto;
-        padding: 2rem;
-        background-color: #f8f9fa;
+        height: 100vh; overflow-y: auto; padding: 2rem; background-color: #f8f9fa;
     }
     header {visibility: hidden;}
     #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
@@ -34,6 +26,7 @@ st.markdown("""
 
 col1, col2 = st.columns([1, 3])
 
+# --- データ読み込み（セッション管理） ---
 with col1:
     st.markdown("##### 📁 データ読込")
     file_req = st.file_uploader("1. 所要量一覧表を選択", type=['xlsx', 'xls'], key="req")
@@ -41,9 +34,32 @@ with col1:
     file_ord = st.file_uploader("3. 発注リストを選択", type=['xlsx', 'xls'], key="ord")
     
     st.divider()
-    # 入力された製品コードも6桁で扱う
-    target_product_code = st.text_input("🔍 絞り込み製品コード", placeholder="例: 001006")
     
+    # 選択された製品コードを格納する変数
+    selected_product = "全表示"
+
+    if file_req:
+        try:
+            # G列の製品コードをリスト化するための読み込み
+            df_req_raw = pd.read_excel(file_req, header=3)
+            df_req_raw.columns = df_req_raw.columns.str.strip()
+            col_g_name = df_req_raw.columns[6]
+            
+            # G列を6桁文字列に変換して重複排除
+            product_list = df_req_raw[col_g_name].dropna().apply(
+                lambda x: str(int(float(x))).zfill(6) if str(x).replace('.','',1).isdigit() else str(x)
+            ).unique().tolist()
+            product_list.sort()
+            
+            # プルダウンの作成
+            selected_product = st.selectbox(
+                "🔍 製品コードで絞り込み",
+                options=["全表示"] + product_list,
+                index=0
+            )
+        except:
+            st.error("所要量一覧表の解析に失敗しました。")
+
     st.divider()
     st.caption("3つのファイルを読み込むと計算を開始します。")
 
@@ -53,46 +69,35 @@ with col2:
 
     if file_req and file_inv and file_ord:
         try:
-            # データの読み込み
-            # 所要量一覧表の全列を一旦読み込み
+            # 計算用の読み込み
             df_req = pd.read_excel(file_req, header=3)
             df_inv = pd.read_excel(file_inv, header=4)
             df_ord = pd.read_excel(file_ord, header=4)
-
-            # 列名のクリーニング（余計な空白を消す）
             df_req.columns = df_req.columns.str.strip()
             
-            # --- G列の値を6桁の文字列に変換する処理 ---
-            # G列(index 6)を特定し、数値を6桁（001006形式）に変換
+            # G列の正規化（0埋め）
             col_g_name = df_req.columns[6]
-            df_req[col_g_name] = df_req[col_g_name].apply(lambda x: str(int(float(x))).zfill(6) if pd.notnull(x) and str(x).replace('.','',1).isdigit() else str(x))
+            df_req[col_g_name] = df_req[col_g_name].apply(
+                lambda x: str(int(float(x))).zfill(6) if pd.notnull(x) and str(x).replace('.','',1).isdigit() else str(x)
+            )
 
-            display_df = None
-            
-            if target_product_code:
-                # 入力側も念のため6桁に揃える
-                search_code = str(target_product_code).strip().zfill(6)
-                
+            # 計算実行
+            df_result = create_pivot(df_req, df_inv, df_ord)
+            display_df = df_result
+
+            # プルダウンが「全表示」以外ならフィルタリング
+            if selected_product != "全表示":
                 col_c_name = df_req.columns[2] # C列（品番）
-                
-                # G列（製品コード）から一致する行を探し、C列（品番）を取得
-                matched_materials = df_req[df_req[col_g_name] == search_code][col_c_name].unique()
-                
-                if len(matched_materials) > 0:
-                    df_result = create_pivot(df_req, df_inv, df_ord)
-                    display_df = df_result[df_result['品番'].isin(matched_materials)]
-                else:
-                    st.warning(f"製品コード「{search_code}」が見つかりません。")
-            else:
-                display_df = create_pivot(df_req, df_inv, df_ord)
+                matched_materials = df_req[df_req[col_g_name] == selected_product][col_c_name].unique()
+                display_df = df_result[df_result['品番'].isin(matched_materials)]
 
-            # 表示処理（変更なし）
+            # スタイル定義
             def color_negative_red(val):
                 if isinstance(val, (int, float)) and val < 0:
                     return 'color: red; font-weight: bold;'
                 return None
 
-            if display_df is not None and not display_df.empty:
+            if not display_df.empty:
                 st.dataframe(
                     display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
                     use_container_width=True,
@@ -103,8 +108,8 @@ with col2:
                         "品名": st.column_config.TextColumn("品名", pinned=True),
                     }
                 )
-            elif target_product_code:
-                st.info("該当する原料の推移データがありません。")
+            else:
+                st.info("該当するデータがありません。")
             
         except Exception as e:
             st.error(f"解析エラーが発生しました: {e}")
