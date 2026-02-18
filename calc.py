@@ -1,71 +1,56 @@
+import streamlit as st
 import pandas as pd
+from calc import process_files_and_create_sim
 
-def process_files_and_create_sim(df_req, df_inv):
-    # 列名の空白を削除
-    df_req.columns = df_req.columns.str.strip()
-    df_inv.columns = df_inv.columns.str.strip()
+# 画面幅を広く使う設定
+st.set_page_config(layout="wide", page_title="在庫シミュレーション")
+
+st.title("📉 在庫・所要量推移シミュレーション")
+
+# 画面を2分割 (左: 操作パネル, 右: 結果表示)
+col1, col2 = st.columns([3, 7])
+
+with col1:
+    st.header("📂 データ取り込み")
+    st.info("Excelファイルをアップロードしてください。")
     
-    # 1. 在庫合計を抽出
-    # 製造実績番号が「【工程順計】」となっている行に、その品番の合計在庫が入っています
-    df_inv_total = df_inv[df_inv['製造実績番号'].astype(str).str.contains('【工程順計】', na=False)].copy()
+    file_req = st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
+    file_inv = st.file_uploader("2. 製造実績番号別在庫", type=['xlsx', 'xls'], key="inv")
+
+with col2:
+    st.header("📋 シミュレーション結果")
     
-    # 品番をキーにして合計在庫数を辞書化
-    df_inv_total['合計在庫数'] = pd.to_numeric(df_inv_total['合計在庫数'], errors='coerce').fillna(0)
-    current_stock = df_inv_total.set_index('品番')['合計在庫数'].to_dict()
-    
-    # 2. 所要量のピボット作成
-    df_req['基準単位数量'] = pd.to_numeric(df_req['基準単位数量'], errors='coerce').fillna(0)
-    
-    # 日付を昇順で並べるためにソート
-    df_req['要求日'] = pd.to_datetime(df_req['要求日'], format='%y/%m/%d', errors='coerce')
-    pivot_req = df_req.pivot_table(
-        index=['品番', '品名'], 
-        columns='要求日', 
-        values='基準単位数量', 
-        aggfunc='sum'
-    ).fillna(0)
-    
-    # 3. シミュレーション計算
-    rows = []
-    # 日付列を文字列（YY/MM/DD）に戻してループ用にする
-    dates = pivot_req.columns
-    
-    for (code, name), req_row in pivot_req.iterrows():
-        # 在庫マスターから初期在庫を取得
-        initial_stock = current_stock.get(code, 0)
-        
-        # 1行目: 使用量
-        usage_row = {
-            '品番': code, 
-            '品名': name, 
-            '現在庫': initial_stock, 
-            '区分': '使用量 (ー)'
-        }
-        # 2行目: 在庫残
-        stock_row = {
-            '品番': code, 
-            '品名': name, 
-            '現在庫': "", 
-            '区分': '在庫残 (＝)'
-        }
-        
-        temp_stock = initial_stock
-        for date in dates:
-            usage = req_row[date]
-            temp_stock -= usage
+    if file_req and file_inv:
+        try:
+            # Excelの読み込み (ヘッダー位置をデータに合わせて調整)
+            # 所要量: 4行目(index=3), 在庫: 5行目(index=4)
+            df_req = pd.read_excel(file_req, header=3)
+            df_inv = pd.read_excel(file_inv, header=4)
             
-            # 日付の表示形式を整える
-            date_str = date.strftime('%y/%m/%d')
-            usage_row[date_str] = usage if usage != 0 else ""
-            stock_row[date_str] = round(temp_stock, 3)
+            # 計算ロジック実行
+            df_sim = process_files_and_create_sim(df_req, df_inv)
             
-        rows.append(usage_row)
-        rows.append(stock_row)
-    
-    # データフレーム化
-    df_result = pd.DataFrame(rows)
-    
-    # 列の並びを整理
-    date_cols = [d.strftime('%y/%m/%d') for d in dates]
-    cols = ['品番', '品名', '現在庫', '区分'] + date_cols
-    return df_result[cols]]
+            # マイナス値を赤字にするスタイル関数
+            def color_negative_red(val):
+                if isinstance(val, (int, float)) and val < 0:
+                    return 'color: red; font-weight: bold;'
+                return None
+
+            # 結果の表示
+            st.write("💡 **在庫残 (＝)** の行がマイナスになると赤く表示されます。")
+            st.dataframe(
+                df_sim.style.applymap(color_negative_red),
+                use_container_width=True,
+                height=700,
+                hide_index=True
+            )
+            
+            # ダウンロード機能（CSV）
+            csv = df_sim.to_csv(index=False).encode('utf_8_sig')
+            st.download_button("結果をCSVで保存", csv, "stock_simulation.csv", "text/csv")
+
+        except Exception as e:
+            st.error(f"エラーが発生しました: {e}")
+            st.warning("Excelの形式（列名やヘッダー位置）が一致しているか確認してください。")
+    else:
+        st.info("左側のパネルから「所要量」と「在庫」の2つのファイルをアップロードしてください。")
