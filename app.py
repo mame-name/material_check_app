@@ -31,7 +31,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# セッション状態の初期化
 if 'filter_mode' not in st.session_state:
     st.session_state.filter_mode = 'all'
 if 'selected_product' not in st.session_state:
@@ -40,8 +39,6 @@ if 'selected_product' not in st.session_state:
 # --- 1. 左画面（サイドバー） ---
 with st.sidebar:
     st.markdown("### 🔍 絞り込み設定")
-    
-    # 製品名リストの作成
     product_options = ["全表示"]
     if st.session_state.get('req'):
         try:
@@ -52,21 +49,14 @@ with st.sidebar:
         except:
             pass
 
-    # プルダウン（keyを指定してセッションで管理）
-    selected_product_name = st.selectbox(
-        "製品名選択", 
-        options=product_options, 
-        key="selected_product",
-        label_visibility="collapsed"
-    )
+    st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
     if st.button("🚨 不足原料のみを表示", use_container_width=True):
         st.session_state.filter_mode = 'shortage'
 
-    # 全表示に戻すボタン（プルダウンもリセット）
     if st.button("🔄 全表示に戻す", use_container_width=True):
         st.session_state.filter_mode = 'all'
-        st.session_state.selected_product = "全表示"  # プルダウンをリセット
+        st.session_state.selected_product = "全表示"
         st.rerun()
 
     st.divider()
@@ -85,14 +75,13 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         df_ord = pd.read_excel(st.session_state.ord, header=4)
         df_req.columns = df_req.columns.str.strip()
         
-        # 1. 計算実行
         df_raw_result = create_pivot(df_req, df_inv, df_ord)
         
-        # ★列名の変更：「現在庫」→「前日在庫」
+        # 列名変更
         if '現在庫' in df_raw_result.columns:
             df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
         
-        # 2. 除外フィルタ
+        # 除外フィルタ
         exclude_mask = (
             df_raw_result['品番'].isin(EXCLUDE_PART_NUMBERS) | 
             df_raw_result['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
@@ -103,7 +92,12 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             all_exclude_indices.extend([idx, idx+1, idx+2])
         
         df_filtered = df_raw_result.drop(index=all_exclude_indices, errors='ignore').reset_index(drop=True)
+        
+        # --- 表示用の加工（空白化処理） ---
         display_df = df_filtered.copy()
+        display_df['前日在庫'] = display_df['前日在庫'].astype(object)
+        # 要求量以外の行の前日在庫を空白にする
+        display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
         # 3. フィルタ：製品名
         if st.session_state.selected_product != "全表示":
@@ -113,6 +107,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             matched_indices = display_df[display_df['品番'].isin(matched_materials)].index
             all_indices = []
             for idx in matched_indices:
+                # 品番列にIDが入っているのは「要求量」行。ここを起点に3行セットを取得
                 for offset in [0, 1, 2]:
                     if idx + offset in display_df.index:
                         all_indices.append(idx + offset)
