@@ -23,15 +23,15 @@ with col2:
             
             df_result = create_pivot(df_req, df_inv)
             
-            # スタイル設定
+            # スタイル設定：マイナス値を赤字に
             def color_negative_red(val):
                 if isinstance(val, (int, float)) and val < 0:
                     return 'color: red; font-weight: bold;'
                 return None
 
-            # 表示設定
+            # 表示設定：小数点3位、欠損値（None）は空白("")で表示
             st.dataframe(
-                df_result.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
+                df_result.style.applymap(color_negative_red).format(precision=3, na_rep=""),
                 use_container_width=True,
                 height=750,
                 hide_index=True
