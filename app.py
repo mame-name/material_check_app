@@ -1,51 +1,12 @@
-import streamlit as st
-import pandas as pd
-from calc import create_pivot
-
-st.set_page_config(layout="wide", page_title="生産管理システム")
-st.title("📉 在庫・所要量推移シミュレーション")
-
-col1, col2 = st.columns([3, 7])
-
-with col1:
-    st.header("📂 Excelファイル取り込み")
-    file_req = st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
-    file_inv = st.file_uploader("2. 製造実績番号別在庫一覧表", type=['xlsx', 'xls'], key="inv")
-    file_ord = st.file_uploader("3. 発注リスト", type=['xlsx', 'xls'], key="ord")
-    file_rec = st.file_uploader("4. 受入表", type=['xlsx', 'xls'], key="rec")
-
-with col2:
-    st.header("📋 在庫推移シミュレーション")
-    
-    if file_req and file_inv and file_ord and file_rec:
-        try:
-            # 各Excelの読み込み
-            df_req = pd.read_excel(file_req, header=3)
-            df_inv = pd.read_excel(file_inv, header=4)
-            df_ord = pd.read_excel(file_ord, header=4)
-            df_rec = pd.read_excel(file_rec, header=2) # 受入表
-            
-            # 計算実行
-            df_result = create_pivot(df_req, df_inv, df_ord, df_rec)
-            
-            # スタイル設定
-            def color_negative_red(val):
-                if isinstance(val, (int, float)) and val < 0:
-                    return 'color: red; font-weight: bold;'
-                return None
-
-            # 表の表示
-            st.dataframe(
-                df_result.style.applymap(color_negative_red).format(precision=3, na_rep=""),
-                use_container_width=True,
-                height=800,
-                hide_index=True,
-                column_config={
-                    "品番": st.column_config.TextColumn("品番", pinned=True),
-                    "品名": st.column_config.TextColumn("品名", pinned=True),
-                }
-            )
-        except Exception as e:
-            st.error(f"エラーが発生しました: {e}")
-    else:
-        st.info("左側の4つのファイルをすべてアップロードしてください。")
+# (app.py の dataframe 表示部分)
+st.dataframe(
+    # na_rep="0.000" を指定することで、万が一のNoneも0として表示
+    df_result.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
+    use_container_width=True,
+    height=800,
+    hide_index=True,
+    column_config={
+        "品番": st.column_config.TextColumn("品番", pinned=True),
+        "品名": st.column_config.TextColumn("品名", pinned=True),
+    }
+)
