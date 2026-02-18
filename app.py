@@ -54,11 +54,6 @@ with st.sidebar:
     if st.button("🚨 不足原料のみを表示", use_container_width=True):
         st.session_state.filter_mode = 'shortage'
 
-    if st.button("🔄 全表示に戻す", use_container_width=True):
-        st.session_state.filter_mode = 'all'
-        st.session_state.selected_product = "全表示"
-        st.rerun()
-
     st.divider()
     st.markdown("### 📁 データ読込")
     st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
