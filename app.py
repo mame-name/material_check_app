@@ -4,6 +4,10 @@ from calc import create_pivot
 
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
+# --- 除外設定リスト（ここに追加するだけでOK） ---
+EXCLUDE_PART_NUMBERS = ["1999999"]  # 完全に一致する品番を除外
+EXCLUDE_KEYWORDS = ["半製品"]        # 品名に含まれていたら除外
+
 # --- UIデザイン ---
 st.markdown("""
     <style>
@@ -18,16 +22,14 @@ st.markdown("""
     header {visibility: hidden;}
     #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
     
-    /* アップローダー薄型化 */
     .stFileUploader { border: 1px solid #e6e9ef; border-radius: 10px; padding: 5px; }
     [data-testid="stFileUploaderSmallNumber"] { display: none !important; }
     [data-testid="stFileUploaderDropzoneInstructions"] { display: none !important; }
     [data-testid="stFileUploader"] section { padding: 0px 10px !important; min-height: 50px !important; }
 
-    /* ★ボタンをプルダウンと同じような横長長方形にする設定 */
     div.stButton > button {
         width: 100%;
-        height: 45px; /* プルダウンの高さに合わせる */
+        height: 45px;
         border-radius: 5px;
         margin-bottom: 10px;
     }
@@ -36,20 +38,18 @@ st.markdown("""
 
 col1, col2 = st.columns([1, 3])
 
-# セッション状態の初期化
 if 'filter_mode' not in st.session_state:
     st.session_state.filter_mode = 'normal'
 
 with col1:
     st.markdown("##### 🔍 絞り込み設定")
     
-    # 1段目：プルダウン
     selected_product_name = "全表示"
     if st.session_state.get('req'):
         try:
             df_req_raw = pd.read_excel(st.session_state.req, header=3)
             df_req_raw.columns = df_req_raw.columns.str.strip()
-            col_h_name = df_req_raw.columns[7] # 8列目
+            col_h_name = df_req_raw.columns[7]
             product_list = sorted(df_req_raw[col_h_name].dropna().unique().tolist())
             selected_product_name = st.selectbox("製品名で絞り込み", options=["全表示"] + product_list, label_visibility="collapsed")
         except:
@@ -57,25 +57,18 @@ with col1:
     else:
         st.selectbox("製品名で絞り込み", options=["全表示"], disabled=True, label_visibility="collapsed")
 
-    # 2段目：不足原料ボタン
     if st.button("🚨 不足原料のみを表示", use_container_width=True):
         st.session_state.filter_mode = 'shortage'
 
-    # 3段目：リセットボタン
     if st.button("🔄 全表示に戻す（リセット）", use_container_width=True):
         st.session_state.filter_mode = 'normal'
         st.rerun()
 
     st.divider()
-
-    # ファイル取り込みエリア
     st.markdown("##### 📁 データ読込")
     file_req = st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
     file_inv = st.file_uploader("2. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
     file_ord = st.file_uploader("3. 発注リスト", type=['xlsx', 'xls'], key="ord")
-    
-    st.divider()
-    st.caption("3つのファイルを読み込むと計算を開始します。")
 
 with col2:
     st.markdown("<h1 style='text-align: center;'>原料在庫シミュレーション</h1>", unsafe_allow_html=True)
@@ -89,10 +82,17 @@ with col2:
             df_req.columns = df_req.columns.str.strip()
             
             df_result = create_pivot(df_req, df_inv, df_ord)
+            
+            # --- ★ 除外フィルタの適用 ---
+            # 品番除外
+            df_result = df_result[~df_result['品番'].isin(EXCLUDE_PART_NUMBERS)]
+            # キーワード除外（品名に含まれる場合）
+            for keyword in EXCLUDE_KEYWORDS:
+                df_result = df_result[~df_result['品名'].str.contains(keyword, na=False)]
+            
             display_df = df_result.copy()
 
-            # --- フィルタリング ---
-            # 製品名絞り込み
+            # --- フィルタリング（製品絞り込み・不足表示） ---
             if selected_product_name != "全表示":
                 col_h_name = df_req.columns[7]
                 col_c_name = df_req.columns[2]
@@ -103,7 +103,6 @@ with col2:
                     all_indices.extend([idx, idx+1, idx+2])
                 display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-            # 不足モード
             if st.session_state.filter_mode == 'shortage':
                 stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
                 date_cols = display_df.columns[4:]
