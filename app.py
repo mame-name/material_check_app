@@ -24,30 +24,13 @@ st.markdown("""
         border: 2px solid #1f77b4 !important;
         border-radius: 5px !important;
         background-color: white !important;
-        margin-bottom: 10px;
+        margin-bottom: 20px;
     }
 
-    /* ボタンのデザイン統一 */
-    div.stButton > button {
-        width: 100% !important;
-        height: 45px !important;
-        border-radius: 5px !important;
-        font-weight: bold !important;
-        margin-top: 5px;
-        transition: all 0.3s;
-    }
-
-    /* 不足表示ONの時のボタン色（赤） */
-    .shortage-on button {
-        background-color: #ff4b4b !important;
-        color: white !important;
-        border: none !important;
-    }
-
-    /* 通常時のボタン色（グレー） */
-    .shortage-off button {
-        background-color: #f0f2f6 !important;
-        color: #31333F !important;
+    /* トグルスイッチのラベルを太字にする */
+    [data-testid="stWidgetLabel"] p {
+        font-weight: bold;
+        color: #31333F;
     }
 
     /* アップローダーのデザイン */
@@ -59,8 +42,6 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # セッション状態の初期化
-if 'filter_mode' not in st.session_state:
-    st.session_state.filter_mode = 'all'
 if 'selected_product' not in st.session_state:
     st.session_state.selected_product = "全表示"
 
@@ -82,24 +63,12 @@ with st.sidebar:
     # 1. 製品名プルダウン（青枠付き）
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 2. 切替式ボタン（トグルロジック）
-    # 現在のモードに応じてボタンのデザインを動的に変更
-    if st.session_state.filter_mode == 'all':
-        st.markdown('<div class="shortage-off">', unsafe_allow_html=True)
-        if st.button("🚨 不足原料のみを表示"):
-            st.session_state.filter_mode = 'shortage'
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="shortage-on">', unsafe_allow_html=True)
-        if st.button("✅ 全表示に戻す"):
-            st.session_state.filter_mode = 'all'
-            st.session_state.selected_product = "全表示"
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+    # 2. トグルスイッチ（最初の形式）
+    show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
 
     st.divider()
     st.markdown("### 📁 データ読込")
+    # 取込順序：所要量 → 発注 → 在庫
     st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
     st.file_uploader("2. 発注リスト", type=['xlsx', 'xls'], key="ord")
     st.file_uploader("3. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
@@ -136,6 +105,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         # --- 表示用の加工（空白化処理） ---
         display_df = df_filtered.copy()
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
+        # 要求量以外の行（納品数・在庫残）の前日在庫を空白にする
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
         # 3. フィルタ：製品名
@@ -151,8 +121,8 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         all_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # 4. フィルタ：不足原料のみ
-        if st.session_state.filter_mode == 'shortage':
+        # 4. フィルタ：不足原料のみ（トグルの状態を参照）
+        if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             date_cols = display_df.columns[4:]
             shortage_mask = (stock_rows[date_cols] < 0).any(axis=1)
@@ -164,7 +134,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         all_shortage_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
 
-        # スタイル適用
+        # マイナス値を赤字にする
         def color_negative_red(val):
             if isinstance(val, (int, float)) and val < 0:
                 return 'color: red; font-weight: bold;'
