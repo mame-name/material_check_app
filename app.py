@@ -4,9 +4,9 @@ from calc import create_pivot
 
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
-# --- 除外設定リスト（自由に追加・編集してください） ---
-EXCLUDE_PART_NUMBERS = ["1999999"]  # 完全に一致する品番を除外
-EXCLUDE_KEYWORDS = ["半製品"]        # 品名にこの文字が含まれていたら除外
+# --- 除外設定リスト ---
+EXCLUDE_PART_NUMBERS = ["1999999"]
+EXCLUDE_KEYWORDS = ["半製品"]
 
 # --- UIデザイン ---
 st.markdown("""
@@ -22,13 +22,11 @@ st.markdown("""
     header {visibility: hidden;}
     #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
     
-    /* アップローダー薄型化 */
     .stFileUploader { border: 1px solid #e6e9ef; border-radius: 10px; padding: 5px; }
     [data-testid="stFileUploaderSmallNumber"] { display: none !important; }
     [data-testid="stFileUploaderDropzoneInstructions"] { display: none !important; }
     [data-testid="stFileUploader"] section { padding: 0px 10px !important; min-height: 50px !important; }
 
-    /* ボタンを長方形に統一 */
     div.stButton > button {
         width: 100%;
         height: 45px;
@@ -47,12 +45,11 @@ with col1:
     st.markdown("##### 🔍 絞り込み設定")
     
     selected_product_name = "全表示"
-    # ファイルがアップロードされている場合のみ製品リストを作成
     if st.session_state.get('req'):
         try:
             df_req_raw = pd.read_excel(st.session_state.req, header=3)
             df_req_raw.columns = df_req_raw.columns.str.strip()
-            col_h_name = df_req_raw.columns[7] # 8列目(H列)
+            col_h_name = df_req_raw.columns[7]
             product_list = sorted(df_req_raw[col_h_name].dropna().unique().tolist())
             selected_product_name = st.selectbox("製品名選択", options=["全表示"] + product_list, label_visibility="collapsed")
         except:
@@ -84,19 +81,26 @@ with col2:
             df_ord = pd.read_excel(file_ord, header=4)
             df_req.columns = df_req.columns.str.strip()
             
-            # 1. 全データ計算実行
+            # 1. 全データ計算
             df_raw_result = create_pivot(df_req, df_inv, df_ord)
             
-            # 2. ★ 除外フィルタの適用
-            df_filtered = df_raw_result[~df_raw_result['品番'].isin(EXCLUDE_PART_NUMBERS)]
-            for keyword in EXCLUDE_KEYWORDS:
-                df_filtered = df_filtered[~df_filtered['品名'].str.contains(keyword, na=False)]
+            # 2. ★除外フィルタの適用（3行1セットで削除）
+            # 品名が書かれているのはセットの1行目のみ
+            exclude_mask = (
+                df_raw_result['品番'].isin(EXCLUDE_PART_NUMBERS) | 
+                df_raw_result['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
+            )
+            # 除外対象の開始インデックスを取得
+            exclude_start_indices = df_raw_result[exclude_mask].index
+            all_exclude_indices = []
+            for idx in exclude_start_indices:
+                all_exclude_indices.extend([idx, idx+1, idx+2]) # 3行分をリストに追加
             
-            # インデックスエラー防止のため振り直し
-            df_filtered = df_filtered.reset_index(drop=True)
+            # 除外実行とインデックスの振り直し
+            df_filtered = df_raw_result.drop(index=all_exclude_indices, errors='ignore').reset_index(drop=True)
             display_df = df_filtered.copy()
 
-            # 3. フィルタリングロジック
+            # 3. フィルタリング
             # A. 製品名絞り込み
             if selected_product_name != "全表示":
                 col_h_name = df_req.columns[7]
@@ -106,7 +110,7 @@ with col2:
                 matched_indices = display_df[display_df['品番'].isin(matched_materials)].index
                 all_indices = []
                 for idx in matched_indices:
-                    for offset in [0, 1, 2]: # 品番行、納品行、在庫残行
+                    for offset in [0, 1, 2]:
                         if idx + offset in display_df.index:
                             all_indices.append(idx + offset)
                 display_df = display_df.loc[sorted(list(set(all_indices)))]
@@ -120,7 +124,7 @@ with col2:
                 
                 all_shortage_indices = []
                 for idx in shortage_indices:
-                    for offset in [-2, -1, 0]: # 在庫残行から遡って3行
+                    for offset in [-2, -1, 0]:
                         if idx + offset in display_df.index:
                             all_shortage_indices.append(idx + offset)
                 display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
