@@ -9,19 +9,9 @@ col1, col2 = st.columns([3, 7])
 
 with col1:
     st.header("📂 Excelファイル取り込み")
-    
-    st.subheader("1. 所要量一覧表")
-    file_req = st.file_uploader("Excelを選択 (所要量)", type=['xlsx', 'xls'], key="req")
-    
-    st.divider()
-    
-    st.subheader("2. 製造実績番号別在庫一覧表")
-    file_inv = st.file_uploader("Excelを選択 (在庫)", type=['xlsx', 'xls'], key="inv")
-    
-    st.divider()
-    
-    st.subheader("3. 受入表")
-    file_rec = st.file_uploader("Excelを選択 (受入)", type=['xlsx', 'xls'], key="rec")
+    file_req = st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
+    file_inv = st.file_uploader("2. 製造実績番号別在庫一覧表", type=['xlsx', 'xls'], key="inv")
+    file_rec = st.file_uploader("3. 受入表", type=['xlsx', 'xls'], key="rec")
 
 with col2:
     st.header("📋 在庫推移シミュレーション")
@@ -31,16 +21,15 @@ with col2:
             df_req = pd.read_excel(file_req, header=3)
             df_inv = pd.read_excel(file_inv, header=4)
             
-            # 2段・全日程表示のデータを作成
             df_result = create_pivot(df_req, df_inv)
             
-            # マイナス値を赤字にするスタイル
+            # スタイル設定
             def color_negative_red(val):
                 if isinstance(val, (int, float)) and val < 0:
                     return 'color: red; font-weight: bold;'
                 return None
 
-            # 数値のフォーマット指定：小数点3位、None(欠損値)は 0.000 と表示
+            # 表示設定
             st.dataframe(
                 df_result.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
                 use_container_width=True,
