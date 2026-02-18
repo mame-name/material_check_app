@@ -5,7 +5,7 @@ def create_pivot(df_req, df_inv):
     df_req.columns = df_req.columns.str.strip()
     df_inv.columns = df_inv.columns.str.strip()
     
-    # 2. 在庫取得 (各品番の先頭行から合計在庫数を取得)
+    # 2. 在庫取得
     df_inv['合計在庫数'] = pd.to_numeric(df_inv['合計在庫数'], errors='coerce').fillna(0)
     df_stock_master = df_inv.drop_duplicates(subset=['品番'], keep='first')[['品番', '合計在庫数']]
     current_stock_dict = df_stock_master.set_index('品番')['合計在庫数'].apply(lambda x: round(x, 3)).to_dict()
@@ -22,7 +22,7 @@ def create_pivot(df_req, df_inv):
         aggfunc='sum'
     ).fillna(0)
 
-    # 4. 横軸を1日刻みのカレンダーに拡張
+    # 4. 横軸拡張
     if not pivot.columns.empty:
         all_dates = pd.date_range(start=pivot.columns.min(), end=pivot.columns.max(), freq='D')
         pivot = pivot.reindex(columns=all_dates, fill_value=0.0)
@@ -30,19 +30,25 @@ def create_pivot(df_req, df_inv):
     date_labels = [d.strftime('%y/%m/%d') for d in pivot.columns]
     pivot.columns = date_labels
 
-    # 5. 2段表示の構築
+    # 5. 2段表示の構築（結合風）
     rows = []
     
     for (code, name), req_values in pivot.iterrows():
         initial_stock = current_stock_dict.get(code, 0.0)
         
-        # 1段目: 要求量行 (区分にマイナス記号を付与)
+        # 1段目: 品番・品名・現在庫を表示
         usage_row = {
-            '品番': code, '品名': name, '現在庫': initial_stock, '区分': '要求量 (ー)'
+            '品番': code, 
+            '品名': name, 
+            '現在庫': initial_stock, 
+            '区分': '要求量 (ー)'
         }
-        # 2段目: 在庫残行 (区分にイコール記号を付与)
+        # 2段目: 品番・品名・現在庫を「空（""）」にする（これで結合したように見せる）
         stock_row = {
-            '品番': code, '品名': name, '現在庫': 0.0, '区分': '在庫残 (＝)'
+            '品番': "", 
+            '品名': "", 
+            '現在庫': None, # formatで0.000になるのを防ぐため
+            '区分': '在庫残 (＝)'
         }
         
         temp_stock = initial_stock
@@ -50,7 +56,6 @@ def create_pivot(df_req, df_inv):
             req_qty = round(float(req_values[date_label]), 3)
             temp_stock = round(temp_stock - req_qty, 3)
             
-            # 要求量は0でも0.0として格納（app.py側で0.000として表示される）
             usage_row[date_label] = req_qty
             stock_row[date_label] = temp_stock
             
@@ -59,7 +64,7 @@ def create_pivot(df_req, df_inv):
     
     result_df = pd.DataFrame(rows)
     
-    # 列順の整理
+    # 列順整理
     fixed_cols = ['品番', '品名', '現在庫', '区分']
     final_cols = fixed_cols + date_labels
     
