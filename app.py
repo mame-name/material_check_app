@@ -4,9 +4,9 @@ from calc import create_pivot
 
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
-# --- 除外設定リスト（ここに追加するだけでOK） ---
+# --- 除外設定リスト（自由に追加・編集してください） ---
 EXCLUDE_PART_NUMBERS = ["1999999"]  # 完全に一致する品番を除外
-EXCLUDE_KEYWORDS = ["半製品"]        # 品名に含まれていたら除外
+EXCLUDE_KEYWORDS = ["半製品"]        # 品名にこの文字が含まれていたら除外
 
 # --- UIデザイン ---
 st.markdown("""
@@ -22,11 +22,13 @@ st.markdown("""
     header {visibility: hidden;}
     #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
     
+    /* アップローダー薄型化 */
     .stFileUploader { border: 1px solid #e6e9ef; border-radius: 10px; padding: 5px; }
     [data-testid="stFileUploaderSmallNumber"] { display: none !important; }
     [data-testid="stFileUploaderDropzoneInstructions"] { display: none !important; }
     [data-testid="stFileUploader"] section { padding: 0px 10px !important; min-height: 50px !important; }
 
+    /* ボタンを長方形に統一 */
     div.stButton > button {
         width: 100%;
         height: 45px;
@@ -45,17 +47,18 @@ with col1:
     st.markdown("##### 🔍 絞り込み設定")
     
     selected_product_name = "全表示"
+    # ファイルがアップロードされている場合のみ製品リストを作成
     if st.session_state.get('req'):
         try:
             df_req_raw = pd.read_excel(st.session_state.req, header=3)
             df_req_raw.columns = df_req_raw.columns.str.strip()
-            col_h_name = df_req_raw.columns[7]
+            col_h_name = df_req_raw.columns[7] # 8列目(H列)
             product_list = sorted(df_req_raw[col_h_name].dropna().unique().tolist())
-            selected_product_name = st.selectbox("製品名で絞り込み", options=["全表示"] + product_list, label_visibility="collapsed")
+            selected_product_name = st.selectbox("製品名選択", options=["全表示"] + product_list, label_visibility="collapsed")
         except:
-            st.selectbox("製品名で絞り込み", options=["全表示"], disabled=True, label_visibility="collapsed")
+            st.selectbox("製品名選択", options=["全表示"], disabled=True, label_visibility="collapsed")
     else:
-        st.selectbox("製品名で絞り込み", options=["全表示"], disabled=True, label_visibility="collapsed")
+        st.selectbox("製品名選択", options=["全表示"], disabled=True, label_visibility="collapsed")
 
     if st.button("🚨 不足原料のみを表示", use_container_width=True):
         st.session_state.filter_mode = 'shortage'
@@ -81,39 +84,48 @@ with col2:
             df_ord = pd.read_excel(file_ord, header=4)
             df_req.columns = df_req.columns.str.strip()
             
-            df_result = create_pivot(df_req, df_inv, df_ord)
+            # 1. 全データ計算実行
+            df_raw_result = create_pivot(df_req, df_inv, df_ord)
             
-            # --- ★ 除外フィルタの適用 ---
-            # 品番除外
-            df_result = df_result[~df_result['品番'].isin(EXCLUDE_PART_NUMBERS)]
-            # キーワード除外（品名に含まれる場合）
+            # 2. ★ 除外フィルタの適用
+            df_filtered = df_raw_result[~df_raw_result['品番'].isin(EXCLUDE_PART_NUMBERS)]
             for keyword in EXCLUDE_KEYWORDS:
-                df_result = df_result[~df_result['品名'].str.contains(keyword, na=False)]
+                df_filtered = df_filtered[~df_filtered['品名'].str.contains(keyword, na=False)]
             
-            display_df = df_result.copy()
+            # インデックスエラー防止のため振り直し
+            df_filtered = df_filtered.reset_index(drop=True)
+            display_df = df_filtered.copy()
 
-            # --- フィルタリング（製品絞り込み・不足表示） ---
+            # 3. フィルタリングロジック
+            # A. 製品名絞り込み
             if selected_product_name != "全表示":
                 col_h_name = df_req.columns[7]
                 col_c_name = df_req.columns[2]
                 matched_materials = df_req[df_req[col_h_name] == selected_product_name][col_c_name].unique().tolist()
+                
                 matched_indices = display_df[display_df['品番'].isin(matched_materials)].index
                 all_indices = []
                 for idx in matched_indices:
-                    all_indices.extend([idx, idx+1, idx+2])
+                    for offset in [0, 1, 2]: # 品番行、納品行、在庫残行
+                        if idx + offset in display_df.index:
+                            all_indices.append(idx + offset)
                 display_df = display_df.loc[sorted(list(set(all_indices)))]
 
+            # B. 不足原料のみ
             if st.session_state.filter_mode == 'shortage':
                 stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
                 date_cols = display_df.columns[4:]
                 shortage_mask = (stock_rows[date_cols] < 0).any(axis=1)
                 shortage_indices = stock_rows[shortage_mask].index
+                
                 all_shortage_indices = []
                 for idx in shortage_indices:
-                    all_shortage_indices.extend([idx-2, idx-1, idx])
+                    for offset in [-2, -1, 0]: # 在庫残行から遡って3行
+                        if idx + offset in display_df.index:
+                            all_shortage_indices.append(idx + offset)
                 display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
 
-            # --- 表示 ---
+            # 4. 表示
             def color_negative_red(val):
                 if isinstance(val, (int, float)) and val < 0:
                     return 'color: red; font-weight: bold;'
@@ -132,7 +144,7 @@ with col2:
                 st.info("表示可能な原料がありません。")
             
         except Exception as e:
-            st.error(f"解析エラー: {e}")
+            st.error(f"解析エラーが発生しました: {e}")
     else:
         st.markdown("<br><br><br>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #d1d1d1;'>データをアップロードしてください</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #d1d1d1;'>左側のパネルからデータをアップロードしてください</p>", unsafe_allow_html=True)
