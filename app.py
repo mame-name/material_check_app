@@ -75,8 +75,7 @@ with col1:
     file_inv = st.file_uploader("3. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
 
 with col2:
-    st.markdown("<h1 style='text-align: center;'>原料在庫シミュレーション</h1>", unsafe_allow_html=True)
-    st.markdown("---")
+    st.markdown("<h3 style='text-align: center;'>原料在庫シミュレーション</h1>", unsafe_allow_html=True)
 
     # セッション内のデータが全て揃っているかチェック
     if st.session_state.get('req') and st.session_state.get('inv') and st.session_state.get('ord'):
