@@ -47,8 +47,8 @@ def create_pivot(df_req, df_inv):
         
         # 2段目: 結合風（空白）
         stock_row = {
-            '品番': "", 
-            '品名': "", 
+            '品番': None, 
+            '品名': None, 
             '現在庫': None, 
             '区分': '在庫残 (＝)'
         }
