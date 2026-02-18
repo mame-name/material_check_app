@@ -23,7 +23,7 @@ def create_pivot(df_req, df_inv):
         aggfunc='sum'
     ).fillna(0)
 
-    # 4. 横軸拡張
+    # 4. 横軸拡張 (1日刻みカレンダー)
     if not pivot.columns.empty:
         all_dates = pd.date_range(start=pivot.columns.min(), end=pivot.columns.max(), freq='D')
         pivot = pivot.reindex(columns=all_dates, fill_value=0.0)
@@ -37,13 +37,21 @@ def create_pivot(df_req, df_inv):
     for (code, name), req_values in pivot.iterrows():
         initial_stock = current_stock_dict.get(code, 0.0)
         
-        # 1段目
+        # --- 1段目: 品番・品名・現在庫を表示 ---
         usage_row = {
-            '品番': code, '品名': name, '現在庫': initial_stock, '区分': '要求量 (ー)'
+            '品番': code, 
+            '品名': name, 
+            '現在庫': initial_stock, 
+            '区分': '要求量 (ー)'
         }
-        # 2段目 (品番、品名、現在庫をNoneにして空白表示させる)
+        
+        # --- 2段目: 品番・品名・現在庫を「空（None）」にする ---
+        # Noneにすることで app.py の na_rep="" が適用され、空白になります
         stock_row = {
-            '品番': None, '品名': None, '現在庫': None, '区分': '在庫残 (＝)'
+            '品番': "", 
+            '品名': "", 
+            '現在庫': None, 
+            '区分': '在庫残 (＝)'
         }
         
         temp_stock = initial_stock
@@ -58,6 +66,8 @@ def create_pivot(df_req, df_inv):
         rows.append(stock_row)
     
     result_df = pd.DataFrame(rows)
+    
+    # 列順整理
     fixed_cols = ['品番', '品名', '現在庫', '区分']
     final_cols = fixed_cols + date_labels
     
