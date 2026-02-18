@@ -4,45 +4,54 @@ from calc import create_pivot
 
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
-# --- 独立スクロールのためのカスタムCSS ---
+# --- 完全2画面独立スクロール & デザイン調整のCSS ---
 st.markdown("""
     <style>
-    /* 左カラムの固定 */
+    /* 全体の背景色と余白調整 */
+    .main {
+        background-color: #f8f9fa;
+    }
+    
+    /* 左カラム（操作パネル）の固定設定 */
     [data-testid="stColumn"]:nth-child(1) {
         position: sticky;
-        top: 2rem;
-        height: calc(100vh - 4rem);
+        top: 0;
+        height: 100vh;
         overflow-y: auto;
+        background-color: #ffffff;
+        padding: 2rem;
+        border-right: 2px solid #e9ecef;
     }
-    /* 右カラムの独立スクロール設定 */
+    
+    /* 右カラム（表示エリア）の独立スクロール設定 */
     [data-testid="stColumn"]:nth-child(2) {
-        height: calc(100vh - 4rem);
+        height: 100vh;
         overflow-y: auto;
-        padding-right: 1rem;
+        padding: 2rem;
+        background-color: #f8f9fa;
     }
-    /* スクロールバーのデザイン調整（任意） */
-    ::-webkit-scrollbar {
-        width: 8px;
-    }
-    ::-webkit-scrollbar-thumb {
-        background: #888;
-        border-radius: 4px;
-    }
+
+    /* Streamlit標準のヘッダーを非表示にしてスペースを確保 */
+    header {visibility: hidden;}
+    #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
     </style>
     """, unsafe_allow_html=True)
 
-st.title("📉 在庫・所要量推移シミュレーション")
-
-col1, col2 = st.columns([3, 7])
+col1, col2 = st.columns([1, 3]) # 比率を少し調整（左をスリムに）
 
 with col1:
-    st.header("📂 Excelファイル取り込み")
+    st.subheader("📂 ファイル取り込み")
+    st.divider()
     file_req = st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
-    file_inv = st.file_uploader("2. 製造実績番号別在庫一覧表", type=['xlsx', 'xls'], key="inv")
+    file_inv = st.file_uploader("2. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
     file_ord = st.file_uploader("3. 発注リスト", type=['xlsx', 'xls'], key="ord")
+    
+    st.caption("※3つのファイルをアップロードすると右側にシミュレーションが表示されます。")
 
 with col2:
-    st.header("📋 在庫推移シミュレーション")
+    # タイトルを右画面の最上部に配置
+    st.title("📉 在庫・所要量推移シミュレーション")
+    st.divider()
     
     if file_req and file_inv and file_ord:
         try:
@@ -57,11 +66,10 @@ with col2:
                     return 'color: red; font-weight: bold;'
                 return None
 
-            # heightを大きめに設定、または None にしてコンテナに任せる
             st.dataframe(
                 df_result.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
                 use_container_width=True,
-                height=1000, 
+                height=1200, # 表を大きく表示
                 hide_index=True,
                 column_config={
                     "品番": st.column_config.TextColumn("品番", pinned=True),
@@ -71,4 +79,4 @@ with col2:
         except Exception as e:
             st.error(f"エラーが発生しました: {e}")
     else:
-        st.info("左側で3つのファイルをアップロードしてください。")
+        st.info("左側のパネルからファイルをアップロードしてください。")
