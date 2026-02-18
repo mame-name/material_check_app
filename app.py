@@ -34,14 +34,15 @@ with col2:
             # 2段・全日程表示のデータを作成
             df_result = create_pivot(df_req, df_inv)
             
+            # マイナス値を赤字にするスタイル
             def color_negative_red(val):
                 if isinstance(val, (int, float)) and val < 0:
                     return 'color: red; font-weight: bold;'
                 return None
 
-            # 数値列のみ小数点3位で表示するフォーマット設定
+            # 数値のフォーマット指定：小数点3位、None(欠損値)は 0.000 と表示
             st.dataframe(
-                df_result.style.applymap(color_negative_red).format(precision=3, na_rep="-"),
+                df_result.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
                 use_container_width=True,
                 height=750,
                 hide_index=True
