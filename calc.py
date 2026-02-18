@@ -6,7 +6,7 @@ def create_pivot(df_req, df_inv):
     df_req.columns = df_req.columns.str.strip()
     df_inv.columns = df_inv.columns.str.strip()
     
-    # 2. 在庫取得
+    # 2. 在庫取得 (各品番の先頭行から)
     df_inv['合計在庫数'] = pd.to_numeric(df_inv['合計在庫数'], errors='coerce').fillna(0)
     df_stock_master = df_inv.drop_duplicates(subset=['品番'], keep='first')[['品番', '合計在庫数']]
     current_stock_dict = df_stock_master.set_index('品番')['合計在庫数'].apply(lambda x: round(x, 3)).to_dict()
@@ -37,7 +37,7 @@ def create_pivot(df_req, df_inv):
     for (code, name), req_values in pivot.iterrows():
         initial_stock = current_stock_dict.get(code, 0.0)
         
-        # --- 1段目: 品番・品名・現在庫を表示 ---
+        # 1段目: 要求量
         usage_row = {
             '品番': code, 
             '品名': name, 
@@ -45,8 +45,7 @@ def create_pivot(df_req, df_inv):
             '区分': '要求量 (ー)'
         }
         
-        # --- 2段目: 品番・品名・現在庫を「空（None）」にする ---
-        # Noneにすることで app.py の na_rep="" が適用され、空白になります
+        # 2段目: 結合風（空白）
         stock_row = {
             '品番': "", 
             '品名': "", 
@@ -66,8 +65,6 @@ def create_pivot(df_req, df_inv):
         rows.append(stock_row)
     
     result_df = pd.DataFrame(rows)
-    
-    # 列順整理
     fixed_cols = ['品番', '品名', '現在庫', '区分']
     final_cols = fixed_cols + date_labels
     
