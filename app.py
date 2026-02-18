@@ -24,15 +24,32 @@ st.markdown("""
         border: 2px solid #1f77b4 !important;
         border-radius: 5px !important;
         background-color: white !important;
-        margin-bottom: 15px; /* スイッチとの間隔 */
+        margin-bottom: 10px;
     }
-    
-    /* トグルスイッチのラベルを少し太くする */
-    [data-testid="stWidgetLabel"] p {
+
+    /* ★チェックボックスをボタンの見た目に改造 */
+    div[data-testid="stCheckbox"] {
+        background-color: #f0f2f6;
+        border-radius: 5px;
+        padding: 10px 15px;
+        border: 1px solid #dcdfe6;
+        transition: all 0.3s;
+        text-align: center;
+    }
+    /* ON状態の時の色指定 */
+    div[data-testid="stCheckbox"]:has(input:checked) {
+        background-color: #ff4b4b; /* 不足表示ONの時は目立つ赤に */
+        border-color: #ff4b4b;
+    }
+    div[data-testid="stCheckbox"]:has(input:checked) label {
+        color: white !important;
         font-weight: bold;
-        color: #31333F;
     }
-    
+    /* チェックボックスの小さな四角自体は消す */
+    div[data-testid="stCheckbox"] [data-testid="stWidgetLabel"] span:first-child {
+        display: none;
+    }
+
     /* アップローダーのデザイン */
     .stFileUploader { border: 1px solid #e6e9ef; border-radius: 10px; padding: 5px; }
     [data-testid="stFileUploaderSmallNumber"] { display: none !important; }
@@ -41,15 +58,10 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# セッション状態の初期化
-if 'selected_product' not in st.session_state:
-    st.session_state.selected_product = "全表示"
-
 # --- 1. 左画面（サイドバー）：操作パネル ---
 with st.sidebar:
     st.markdown("### 🔍 絞り込み設定")
     
-    # 製品名リストの作成
     product_options = ["全表示"]
     if st.session_state.get('req'):
         try:
@@ -60,13 +72,12 @@ with st.sidebar:
         except:
             pass
 
-    # 1. 製品名プルダウン（青枠付き）
+    # 1. 製品名プルダウン
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 2. 不足原料フィルタをトグルスイッチに変更
-    # key="filter_mode" を指定することで、以前のロジック（st.session_state.filter_mode）を活かします
-    # ただしトグルはTrue/Falseを返すため、下の表示ロジック部分を少し調整しています
-    show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
+    # 2. ボタン型トグル（見た目はボタン、機能はトグル）
+    # checkboxをCSSでボタン化しています
+    show_shortage_only = st.checkbox("🚨 不足原料のみを表示", value=False)
 
     st.divider()
     st.markdown("### 📁 データ読込")
@@ -104,7 +115,6 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
-        # 3. フィルタ：製品名
         if st.session_state.selected_product != "全表示":
             col_h_name = df_req.columns[7]
             col_c_name = df_req.columns[2]
@@ -117,7 +127,6 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         all_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # 4. フィルタ：不足原料のみ（トグルの状態を参照）
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             date_cols = display_df.columns[4:]
