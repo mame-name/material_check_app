@@ -38,12 +38,14 @@ st.markdown("""
 
 col1, col2 = st.columns([1, 3])
 
-if 'filter_mode' not in st.session_state:
-    st.session_state.filter_mode = 'normal'
+# 不足表示モードの切り替え管理
+if 'show_shortage' not in st.session_state:
+    st.session_state.show_shortage = False
 
 with col1:
     st.markdown("##### 🔍 絞り込み設定")
     
+    # 1段目：製品名プルダウン
     selected_product_name = "全表示"
     if st.session_state.get('req'):
         try:
@@ -57,11 +59,10 @@ with col1:
     else:
         st.selectbox("製品名選択", options=["全表示"], disabled=True, label_visibility="collapsed")
 
-    if st.button("🚨 不足原料のみを表示", use_container_width=True):
-        st.session_state.filter_mode = 'shortage'
-
-    if st.button("🔄 全表示に戻す（リセット）", use_container_width=True):
-        st.session_state.filter_mode = 'normal'
+    # 2段目：不足原料ボタン（トグル形式）
+    button_label = "🚨 不足原料のみを表示" if not st.session_state.show_shortage else "✅ 全原料を表示に戻す"
+    if st.button(button_label, use_container_width=True):
+        st.session_state.show_shortage = not st.session_state.show_shortage
         st.rerun()
 
     st.divider()
@@ -84,19 +85,16 @@ with col2:
             # 1. 全データ計算
             df_raw_result = create_pivot(df_req, df_inv, df_ord)
             
-            # 2. ★除外フィルタの適用（3行1セットで削除）
-            # 品名が書かれているのはセットの1行目のみ
+            # 2. 除外フィルタ（3行セットで削除）
             exclude_mask = (
                 df_raw_result['品番'].isin(EXCLUDE_PART_NUMBERS) | 
                 df_raw_result['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
             )
-            # 除外対象の開始インデックスを取得
             exclude_start_indices = df_raw_result[exclude_mask].index
             all_exclude_indices = []
             for idx in exclude_start_indices:
-                all_exclude_indices.extend([idx, idx+1, idx+2]) # 3行分をリストに追加
+                all_exclude_indices.extend([idx, idx+1, idx+2])
             
-            # 除外実行とインデックスの振り直し
             df_filtered = df_raw_result.drop(index=all_exclude_indices, errors='ignore').reset_index(drop=True)
             display_df = df_filtered.copy()
 
@@ -115,8 +113,8 @@ with col2:
                             all_indices.append(idx + offset)
                 display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-            # B. 不足原料のみ
-            if st.session_state.filter_mode == 'shortage':
+            # B. 不足原料のみ（セッション状態に基づく）
+            if st.session_state.show_shortage:
                 stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
                 date_cols = display_df.columns[4:]
                 shortage_mask = (stock_rows[date_cols] < 0).any(axis=1)
