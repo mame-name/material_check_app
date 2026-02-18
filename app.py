@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from calc import process_requirements, process_inventory, process_receipts, create_pivot
+from calc import process_receipts, create_pivot
 
 st.set_page_config(layout="wide", page_title="生産管理システム")
 st.title("📦 生産管理・在庫管理システム")
@@ -29,21 +29,27 @@ with col2:
     tab1, tab2 = st.tabs(["所要量集計表 (在庫連動)", "受入データ"])
     
     with tab1:
-        # 在庫反映のため、所要量と在庫の両方のファイルが必要
         if file_req and file_inv:
-            df_req = pd.read_excel(file_req, header=3)
-            df_inv = pd.read_excel(file_inv, header=4)
-            
-            st.subheader("🗓️ 品番別・要求日別 所要量 (現在庫反映)")
-            # 在庫データを渡してピボット作成
-            df_pivot = create_pivot(df_req, df_inv)
-            st.dataframe(df_pivot, use_container_width=True, hide_index=True)
+            try:
+                # データ読み込み
+                df_req = pd.read_excel(file_req, header=3)
+                df_inv = pd.read_excel(file_inv, header=4)
+                
+                st.subheader("🗓️ 品番別・要求日別 所要量 (現在庫反映)")
+                # 在庫データを渡してピボット作成
+                df_pivot = create_pivot(df_req, df_inv)
+                st.dataframe(df_pivot, use_container_width=True, hide_index=True)
+            except Exception as e:
+                st.error(f"エラーが発生しました: {e}")
         else:
             st.info("「所要量一覧表」と「製造実績番号別在庫一覧表」を両方アップロードしてください。")
 
     with tab2:
         if file_rec:
-            df_rec = pd.read_excel(file_rec, header=2)
-            st.dataframe(process_receipts(df_rec), use_container_width=True, hide_index=True)
+            try:
+                df_rec = pd.read_excel(file_rec, header=2)
+                st.dataframe(process_receipts(df_rec), use_container_width=True, hide_index=True)
+            except Exception as e:
+                st.error(f"受入表の読み込みエラー: {e}")
         else:
             st.info("「受入表」をアップロードしてください。")
