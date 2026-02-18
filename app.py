@@ -1,18 +1,17 @@
 import streamlit as st
 import pandas as pd
+import time
 from calc import create_pivot
 
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
-# --- 完全2画面独立スクロール & デザイン調整のCSS ---
+# --- UIデザイン用のカスタムCSS ---
 st.markdown("""
     <style>
-    /* 全体の背景色と余白調整 */
-    .main {
-        background-color: #f8f9fa;
-    }
+    /* 背景とフォント調整 */
+    .main { background-color: #f8f9fa; }
     
-    /* 左カラム（操作パネル）の固定設定 */
+    /* 左カラム（操作パネル） */
     [data-testid="stColumn"]:nth-child(1) {
         position: sticky;
         top: 0;
@@ -23,7 +22,7 @@ st.markdown("""
         border-right: 2px solid #e9ecef;
     }
     
-    /* 右カラム（表示エリア）の独立スクロール設定 */
+    /* 右カラム（表示エリア） */
     [data-testid="stColumn"]:nth-child(2) {
         height: 100vh;
         overflow-y: auto;
@@ -31,35 +30,51 @@ st.markdown("""
         background-color: #f8f9fa;
     }
 
-    /* Streamlit標準のヘッダーを非表示にしてスペースを確保 */
+    /* ヘッダー周りの余白排除 */
     header {visibility: hidden;}
     #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
+    
+    /* カード風のデザイン */
+    .stFileUploader {
+        border: 1px solid #e6e9ef;
+        border-radius: 10px;
+        padding: 10px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-col1, col2 = st.columns([1, 3]) # 比率を少し調整（左をスリムに）
+col1, col2 = st.columns([1, 3])
 
 with col1:
-    st.subheader("📂 ファイル取り込み")
-    st.divider()
-    file_req = st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
-    file_inv = st.file_uploader("2. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
-    file_ord = st.file_uploader("3. 発注リスト", type=['xlsx', 'xls'], key="ord")
+    st.markdown("### 📁 データ読込")
+    st.markdown("---")
     
-    st.caption("※3つのファイルをアップロードすると右側にシミュレーションが表示されます。")
+    file_req = st.file_uploader("1. 所要量一覧表を選択", type=['xlsx', 'xls'], key="req")
+    file_inv = st.file_uploader("2. 在庫一覧表を選択", type=['xlsx', 'xls'], key="inv")
+    file_ord = st.file_uploader("3. 発注リストを選択", type=['xlsx', 'xls'], key="ord")
+    
+    st.divider()
+    st.caption("🤖 **Usage Tip** \n3つのファイルを読み込むと、AI（計算ロジック）が即座に在庫推移を解析します。")
 
 with col2:
-    # タイトルを右画面の最上部に配置
-    st.title("📉 在庫・所要量推移シミュレーション")
-    st.divider()
-    
+    # --- ヘッダー部分（UI参照） ---
+    st.markdown("<h1 style='text-align: center;'>Intelligent Simulator<br>📉 📊 📈 在庫推移確認 📈 📊 📉</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: gray;'>過去の在庫と未来の所要量を解析し、最適な在庫推移をシミュレーションします</p>", unsafe_allow_html=True)
+    st.markdown("---")
+
     if file_req and file_inv and file_ord:
         try:
-            df_req = pd.read_excel(file_req, header=3)
-            df_inv = pd.read_excel(file_inv, header=4)
-            df_ord = pd.read_excel(file_ord, header=4)
+            # 解析中の演出
+            with st.status("🧠 データを解析してシミュレーションを生成中...", expanded=False) as status:
+                df_req = pd.read_excel(file_req, header=3)
+                df_inv = pd.read_excel(file_inv, header=4)
+                df_ord = pd.read_excel(file_ord, header=4)
+                
+                df_result = create_pivot(df_req, df_inv, df_ord)
+                status.update(label="✅ 解析完了", state="complete")
             
-            df_result = create_pivot(df_req, df_inv, df_ord)
+            # 結果表示
+            st.subheader("🔮 在庫推移シミュレーション結果")
             
             def color_negative_red(val):
                 if isinstance(val, (int, float)) and val < 0:
@@ -69,14 +84,18 @@ with col2:
             st.dataframe(
                 df_result.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
                 use_container_width=True,
-                height=1200, # 表を大きく表示
+                height=1000,
                 hide_index=True,
                 column_config={
                     "品番": st.column_config.TextColumn("品番", pinned=True),
                     "品名": st.column_config.TextColumn("品名", pinned=True),
                 }
             )
+            
         except Exception as e:
-            st.error(f"エラーが発生しました: {e}")
+            st.error(f"💀 解析エラーが発生しました: {e}")
     else:
-        st.info("左側のパネルからファイルをアップロードしてください。")
+        # 待機画面の演出
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color: #d1d1d1;'>📂 📂 📂</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #d1d1d1;'>左側のパネルからデータをアップロードしてください</p>", unsafe_allow_html=True)
