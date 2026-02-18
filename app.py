@@ -50,7 +50,7 @@ st.markdown("""
 col1, col2 = st.columns([1, 3])
 
 with col1:
-    st.markdown("# 📁 データ読込")
+    st.markdown("##### 📁 データ読込")
     file_req = st.file_uploader("1. 所要量一覧表を選択", type=['xlsx', 'xls'], key="req")
     file_inv = st.file_uploader("2. 在庫一覧表を選択", type=['xlsx', 'xls'], key="inv")
     file_ord = st.file_uploader("3. 発注リストを選択", type=['xlsx', 'xls'], key="ord")
