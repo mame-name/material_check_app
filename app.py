@@ -4,7 +4,7 @@ from calc import create_pivot
 
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
-# --- UIデザイン（2画面独立スクロール） ---
+# --- UIデザイン（2画面独立スクロール ＋ アップローダーの薄型化） ---
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -27,7 +27,23 @@ st.markdown("""
     }
     header {visibility: hidden;}
     #root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 0rem;}
-    .stFileUploader { border: 1px solid #e6e9ef; border-radius: 10px; padding: 10px; }
+    
+    /* --- アップローダーの薄型化 ＋ 注釈(Limit 200MB...)の非表示 --- */
+    .stFileUploader { border: 1px solid #e6e9ef; border-radius: 10px; padding: 5px; }
+    
+    /* 「Limit 200MB per file...」などの注釈部分を完全に非表示にする */
+    [data-testid="stFileUploaderSmallNumber"] {
+        display: none !important;
+    }
+    /* ドラッグ＆ドロップの説明文を非表示にして高さを圧縮 */
+    [data-testid="stFileUploaderDropzoneInstructions"] {
+        display: none !important;
+    }
+    /* 内部の余白を詰める */
+    [data-testid="stFileUploader"] section {
+        padding: 0px 10px !important;
+        min-height: 50px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -43,7 +59,7 @@ with col1:
     st.caption("3つのファイルを読み込むと計算を開始します。")
 
 with col2:
-    st.markdown("<h1 style='text-align: center;'>Intelligent Simulator</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>原料在庫シミュレーション</h1>", unsafe_allow_html=True)
     st.markdown("---")
 
     if file_req and file_inv and file_ord:
