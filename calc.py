@@ -6,8 +6,9 @@ def create_pivot(df_req, df_inv):
     df_req.columns = df_req.columns.str.strip()
     df_inv.columns = df_inv.columns.str.strip()
     
-    # 2. 在庫取得 (各品番の先頭行から)
+    # 2. 在庫取得 (各品番の最終行を参照)
     df_inv['合計在庫数'] = pd.to_numeric(df_inv['合計在庫数'], errors='coerce').fillna(0)
+    # 最終行（品番計など）を在庫として採用
     df_stock_master = df_inv.drop_duplicates(subset=['品番'], keep='last')[['品番', '合計在庫数']]
     current_stock_dict = df_stock_master.set_index('品番')['合計在庫数'].apply(lambda x: round(x, 3)).to_dict()
 
@@ -71,5 +72,6 @@ def create_pivot(df_req, df_inv):
     return result_df[final_cols]
 
 def process_receipts(df):
+    # 将来的に発注リストの加工が必要になった際はこちらを使用
     df.columns = df.columns.str.strip()
     return df.fillna(0)
