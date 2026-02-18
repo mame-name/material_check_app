@@ -10,10 +10,12 @@ def create_pivot(df_req, df_inv):
     df_stock_master = df_inv.drop_duplicates(subset=['品番'], keep='first')[['品番', '合計在庫数']]
     current_stock_dict = df_stock_master.set_index('品番')['合計在庫数'].to_dict()
 
-    # 3. 所要量のピボット作成
+    # 3. 所要量のピボット作成 (一旦通常通り作成)
     df_req['基準単位数量'] = pd.to_numeric(df_req['基準単位数量'], errors='coerce').fillna(0)
-    # 日付を綺麗に並べるための処理
-    df_req['要求日'] = pd.to_datetime(df_req['要求日'], errors='coerce').dt.strftime('%y/%m/%d')
+    df_req['要求日'] = pd.to_datetime(df_req['要求日'], format='%y/%m/%d', errors='coerce')
+    
+    # 欠損値（変換できなかった日付）を除去
+    df_req = df_req.dropna(subset=['要求日'])
     
     pivot = df_req.pivot_table(
         index=['品番', '品名'], 
@@ -21,48 +23,48 @@ def create_pivot(df_req, df_inv):
         values='基準単位数量', 
         aggfunc='sum'
     ).fillna(0)
+
+    # --- 4. 横軸を1日刻みのカレンダーに拡張 ---
+    if not pivot.columns.empty:
+        all_dates = pd.date_range(start=pivot.columns.min(), end=pivot.columns.max(), freq='D')
+        # 存在しない日付を列として追加し、0で埋める
+        pivot = pivot.reindex(columns=all_dates, fill_value=0)
     
-    # 4. 2段表示の構築
+    # 日付の表示形式を 'y/m/d' に統一
+    date_labels = [d.strftime('%y/%m/%d') for d in pivot.columns]
+    pivot.columns = date_labels
+
+    # --- 5. 2段表示の構築 ---
     rows = []
-    dates = pivot.columns.tolist()
     
     for (code, name), req_values in pivot.iterrows():
-        # この品番の初期在庫
         initial_stock = current_stock_dict.get(code, 0)
         
-        # --- 1段目: 要求量行 ---
+        # 1段目: 要求量
         usage_row = {
-            '品番': code,
-            '品名': name,
-            '現在庫': initial_stock,
-            '区分': '要求量 (ー)'
+            '品番': code, '品名': name, '現在庫': initial_stock, '区分': '要求量 (ー)'
         }
-        # --- 2段目: 在庫残行 ---
+        # 2段目: 在庫残
         stock_row = {
-            '品番': code,
-            '品名': name,
-            '現在庫': "", # 見やすくするため空欄
-            '区分': '在庫残 (＝)'
+            '品番': code, '品名': name, '現在庫': "", '区分': '在庫残 (＝)'
         }
         
-        # 日付ごとの計算
         temp_stock = initial_stock
-        for date in dates:
-            req_qty = req_values[date]
-            temp_stock -= req_qty  # 在庫残を更新
+        for date_label in date_labels:
+            req_qty = req_values[date_label]
+            temp_stock -= req_qty
             
-            usage_row[date] = req_qty if req_qty != 0 else ""
-            stock_row[date] = round(temp_stock, 3)
+            usage_row[date_label] = req_qty if req_qty != 0 else ""
+            stock_row[date_label] = round(temp_stock, 3)
             
         rows.append(usage_row)
         rows.append(stock_row)
     
-    # データフレーム化
     result_df = pd.DataFrame(rows)
     
-    # 列の順序整理
+    # 列順の整理
     fixed_cols = ['品番', '品名', '現在庫', '区分']
-    final_cols = fixed_cols + dates
+    final_cols = fixed_cols + date_labels
     
     return result_df[final_cols]
 
