@@ -5,19 +5,13 @@ from calc import process_receipts, create_pivot
 st.set_page_config(layout="wide", page_title="生産管理システム")
 st.title("📉 在庫・所要量推移シミュレーション")
 
-# --- CSSで左側の列を固定 ---
+# --- CSS: テーブルの見た目を調整 ---
 st.markdown("""
     <style>
-    /* データフレームの特定列を固定するカスタムCSS */
-    [data-testid="stTable"] {
-        overflow: auto;
+    /* テーブル全体のフォントサイズを少し小さくして視認性を上げる */
+    .stDataFrame {
+        font-size: 12px;
     }
-    /* 品番、品名、現在庫、区分（1〜4列目）を固定 */
-    /* ※Streamlitのバージョンやブラウザにより挙動が変わる場合があります */
-    thead tr th:nth-child(1), tbody tr td:nth-child(1) { position: sticky; left: 0; background-color: white; z-index: 3; }
-    thead tr th:nth-child(2), tbody tr td:nth-child(2) { position: sticky; left: 100px; background-color: white; z-index: 3; }
-    thead tr th:nth-child(3), tbody tr td:nth-child(3) { position: sticky; left: 250px; background-color: white; z-index: 3; }
-    thead tr th:nth-child(4), tbody tr td:nth-child(4) { position: sticky; left: 350px; background-color: white; z-index: 3; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -44,13 +38,19 @@ with col2:
                     return 'color: red; font-weight: bold;'
                 return None
 
-            # 表示設定
-            # hide_index=True にすることで、余計なindex列を消して品番を左端にします
+            # --- 列固定の設定 ---
+            # column_config を使用して、左側の4列の幅を固定し、ピン留めを促します
             st.dataframe(
                 df_result.style.applymap(color_negative_red).format(precision=3, na_rep=""),
                 use_container_width=True,
                 height=750,
-                hide_index=True
+                hide_index=True,
+                column_config={
+                    "品番": st.column_config.TextColumn(pinned=True, width="medium"),
+                    "品名": st.column_config.TextColumn(pinned=True, width="large"),
+                    "現在庫": st.column_config.NumberColumn(pinned=True, width="small"),
+                    "区分": st.column_config.TextColumn(pinned=True, width="small"),
+                }
             )
         except Exception as e:
             st.error(f"エラーが発生しました: {e}")
