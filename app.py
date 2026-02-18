@@ -1,33 +1,58 @@
 import streamlit as st
 import pandas as pd
-from calc import process_data
+from calc import process_requirements, process_inventory, process_receipts
 
-st.set_page_config(layout="wide")
-st.title("📊 データベース管理・並べ替えアプリ")
+st.set_page_config(layout="wide", page_title="生産管理データ統合")
+st.title("📦 生産管理・在庫管理システム")
 
-# 画面を2分割 (左: 3, 右: 7 の比率)
+# 画面分割 (左: 3, 右: 7)
 col1, col2 = st.columns([3, 7])
 
 with col1:
-    st.header("📂 データ取り込み")
-    uploaded_file = st.file_uploader("CSVファイルを選択してください", type='csv')
+    st.header("📂 ファイル取り込み")
     
-    if uploaded_file:
-        # データの読み込み
-        df = pd.read_csv(uploaded_file)
-        st.success("ファイルを読み込みました！")
-        
-        # calc.pyで計算処理が必要な場合はここで実行
-        df = process_data(df)
+    # ① 所要量一覧表
+    st.subheader("1. 所要量一覧表")
+    file_req = st.file_uploader("CSVを選択", type='csv', key="req")
+    
+    st.divider() # 区切り線
+    
+    # ② 製造実績番号別在庫一覧表
+    st.subheader("2. 製造実績番号別在庫")
+    file_inv = st.file_uploader("CSVを選択", type='csv', key="inv")
+    
+    st.divider()
+    
+    # ③ 受入表
+    st.subheader("3. 受入表")
+    file_rec = st.file_uploader("CSVを選択", type='csv', key="rec")
 
 with col2:
-    st.header("📋 データ一覧")
-    if uploaded_file:
-        # st.dataframe を使うと、ユーザーが列名をクリックしてソート可能になります
-        st.write("列名をクリックすると昇順/降順に並べ替えができます。")
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        
-        # 簡易的な集計情報の表示
-        st.info(f"現在の表示件数: {len(df)} 件")
-    else:
-        st.warning("左側のパネルからデータをアップロードしてください。")
+    st.header("📋 データ表示・ソート")
+    
+    # タブを作成して表示を整理
+    tab1, tab2, tab3 = st.tabs(["所要量データ", "在庫(実績番号別)", "受入データ"])
+    
+    with tab1:
+        if file_req:
+            df_req = pd.read_csv(file_req)
+            df_req = process_requirements(df_req)
+            st.dataframe(df_req, use_container_width=True, hide_index=True)
+        else:
+            st.info("左側から「所要量一覧表」をアップロードしてください。")
+
+    with tab2:
+        if file_inv:
+            df_inv = pd.read_csv(file_inv)
+            df_inv = process_inventory(df_inv)
+            st.dataframe(df_inv, use_container_width=True, hide_index=True)
+        else:
+            st.info("左側から「在庫一覧表」をアップロードしてください。")
+
+    with tab3:
+        if file_rec:
+            df_rec = pd.read_csv(file_rec)
+            df_rec = process_receipts(df_rec)
+            st.dataframe(df_rec, use_container_width=True, hide_index=True)
+        else:
+            st.info("左側から「受入表」をアップロードしてください。")
