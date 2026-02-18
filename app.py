@@ -18,9 +18,11 @@ with col2:
     
     if file_req and file_inv:
         try:
+            # Excelの読み込み
             df_req = pd.read_excel(file_req, header=3)
             df_inv = pd.read_excel(file_inv, header=4)
             
+            # 2段表示データの作成
             df_result = create_pivot(df_req, df_inv)
             
             # スタイル設定：マイナス値を赤字に
@@ -29,12 +31,18 @@ with col2:
                     return 'color: red; font-weight: bold;'
                 return None
 
-            # 表示設定：小数点3位、欠損値（None）は空白("")で表示
+            # 表示設定：左側4列をピン留め固定
             st.dataframe(
                 df_result.style.applymap(color_negative_red).format(precision=3, na_rep=""),
                 use_container_width=True,
                 height=750,
-                hide_index=True
+                hide_index=True,
+                column_config={
+                    "品番": st.column_config.TextColumn("品番", pinned=True),
+                    "品名": st.column_config.TextColumn("品名", pinned=True),
+                    "現在庫": st.column_config.NumberColumn("現在庫", pinned=True, format="%.3f"),
+                    "区分": st.column_config.TextColumn("区分", pinned=True),
+                }
             )
         except Exception as e:
             st.error(f"エラーが発生しました: {e}")
