@@ -65,7 +65,7 @@ def create_pivot(df_req, df_inv):
         rows.append(stock_row)
     
     result_df = pd.DataFrame(rows)
-    fixed_cols = ['品番', '品名']
+    fixed_cols = ['品番', '品名', '現在庫', '区分']
     final_cols = fixed_cols + date_labels
     
     return result_df[final_cols]
