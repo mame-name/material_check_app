@@ -11,7 +11,7 @@ with col1:
     st.header("📂 Excelファイル取り込み")
     file_req = st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
     file_inv = st.file_uploader("2. 製造実績番号別在庫一覧表", type=['xlsx', 'xls'], key="inv")
-    file_rec = st.file_uploader("3. 受入表", type=['xlsx', 'xls'], key="rec")
+    file_ord = st.file_uploader("3. 発注リスト", type=['xlsx', 'xls'], key="ord") # ここを変更
 
 with col2:
     st.header("📋 在庫推移シミュレーション")
@@ -31,7 +31,7 @@ with col2:
                     return 'color: red; font-weight: bold;'
                 return None
 
-            # 表示設定：左側4列をピン留め固定
+            # 表示設定：左側2列をピン留め
             st.dataframe(
                 df_result.style.applymap(color_negative_red).format(precision=3, na_rep=""),
                 use_container_width=True,
@@ -45,4 +45,4 @@ with col2:
         except Exception as e:
             st.error(f"エラーが発生しました: {e}")
     else:
-        st.info("左側で「所要量」と「在庫」の2つのファイルをアップロードしてください。")
+        st.info("左側で「所要量」と「在庫」をアップロードしてください。")
