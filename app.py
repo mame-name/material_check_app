@@ -38,16 +38,17 @@ with col1:
 
     if file_req:
         try:
-            # （製品名）をリスト化
+            # H列（8列目）を製品名としてリスト化
             df_req_raw = pd.read_excel(file_req, header=3)
             df_req_raw.columns = df_req_raw.columns.str.strip()
-            col_g_name = df_req_raw.columns[7]
+            # 8列目なので index は 7
+            col_h_name = df_req_raw.columns[7] 
             
             # 空白を除去して重複排除
-            product_list = df_req_raw[col_g_name].dropna().unique().tolist()
+            product_list = df_req_raw[col_h_name].dropna().unique().tolist()
             product_list.sort()
             
-            # プルダウン（製品名）
+            # プルダウン
             selected_product_name = st.selectbox(
                 "🔍 製品名で絞り込み",
                 options=["全表示"] + product_list,
@@ -65,23 +66,23 @@ with col2:
 
     if file_req and file_inv and file_ord:
         try:
-            # 計算用の読み込み
+            # 各ファイルの読み込み
             df_req = pd.read_excel(file_req, header=3)
             df_inv = pd.read_excel(file_inv, header=4)
             df_ord = pd.read_excel(file_ord, header=4)
             df_req.columns = df_req.columns.str.strip()
             
-            # 計算実行
+            # 計算の実行
             df_result = create_pivot(df_req, df_inv, df_ord)
             display_df = df_result
 
-            # フィルタリング
+            # 絞り込みロジック
             if selected_product_name != "全表示":
-                col_g_name = df_req.columns[6] # G列（製品名）
-                col_c_name = df_req.columns[2] # C列（品番）
+                col_h_name = df_req.columns[7] # 8列目（製品名）
+                col_c_name = df_req.columns[2] # 3列目（原料品番）
                 
-                # 選択した製品名に紐づく品番（原料）を取得
-                matched_materials = df_req[df_req[col_g_name] == selected_product_name][col_c_name].unique()
+                # 選択した製品名に紐づく原料品番を特定
+                matched_materials = df_req[df_req[col_h_name] == selected_product_name][col_c_name].unique()
                 display_df = df_result[df_result['品番'].isin(matched_materials)]
 
             def color_negative_red(val):
@@ -101,7 +102,7 @@ with col2:
                     }
                 )
             else:
-                st.info("該当する原料データがありません。")
+                st.info("表示するデータがありません。")
             
         except Exception as e:
             st.error(f"解析エラーが発生しました: {e}")
