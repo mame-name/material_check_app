@@ -24,32 +24,29 @@ with col1:
     file_rec = st.file_uploader("Excelを選択 (受入)", type=['xlsx', 'xls'], key="rec")
 
 with col2:
-    st.header("📋 データ表示・ソート")
+    st.header("📋 在庫推移シミュレーション")
     
-    tab1, tab2 = st.tabs(["所要量集計表 (在庫連動)", "受入データ"])
-    
-    with tab1:
-        if file_req and file_inv:
-            try:
-                # データ読み込み
-                df_req = pd.read_excel(file_req, header=3)
-                df_inv = pd.read_excel(file_inv, header=4)
-                
-                st.subheader("🗓️ 品番別・要求日別 所要量 (現在庫反映)")
-                # 在庫データを渡してピボット作成
-                df_pivot = create_pivot(df_req, df_inv)
-                st.dataframe(df_pivot, use_container_width=True, hide_index=True)
-            except Exception as e:
-                st.error(f"エラーが発生しました: {e}")
-        else:
-            st.info("「所要量一覧表」と「製造実績番号別在庫一覧表」を両方アップロードしてください。")
+    if file_req and file_inv:
+        try:
+            df_req = pd.read_excel(file_req, header=3)
+            df_inv = pd.read_excel(file_inv, header=4)
+            
+            # 2段表示のデータを作成
+            df_result = create_pivot(df_req, df_inv)
+            
+            # マイナス値を赤字にするスタイル
+            def color_negative_red(val):
+                if isinstance(val, (int, float)) and val < 0:
+                    return 'color: red; font-weight: bold;'
+                return None
 
-    with tab2:
-        if file_rec:
-            try:
-                df_rec = pd.read_excel(file_rec, header=2)
-                st.dataframe(process_receipts(df_rec), use_container_width=True, hide_index=True)
-            except Exception as e:
-                st.error(f"受入表の読み込みエラー: {e}")
-        else:
-            st.info("「受入表」をアップロードしてください。")
+            st.dataframe(
+                df_result.style.applymap(color_negative_red),
+                use_container_width=True,
+                height=700,
+                hide_index=True
+            )
+        except Exception as e:
+            st.error(f"エラーが発生しました: {e}")
+    else:
+        st.info("左側で「所要量」と「在庫」の2つのファイルをアップロードしてください。")
