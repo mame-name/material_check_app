@@ -24,43 +24,16 @@ st.markdown("""
         border: 2px solid #1f77b4 !important;
         border-radius: 5px !important;
         background-color: white !important;
-        margin-bottom: 15px;
-    }
-
-    /* チェックボックスをプルダウンと同じ幅のボタンに改造 */
-    div[data-testid="stCheckbox"] {
-        width: 100% !important;
-        background-color: #f0f2f6;
-        border-radius: 5px;
-        border: 1px solid #dcdfe6;
-        transition: all 0.2s;
         margin-bottom: 10px;
-        display: flex;
-        justify-content: center;
     }
-    
-    /* ラベルを枠いっぱいに広げて中央揃え */
-    div[data-testid="stCheckbox"] label {
+
+    /* 本物のボタンのデザイン調整（デコボコ解消） */
+    div.stButton > button {
         width: 100% !important;
-        padding: 10px 0px !important;
-        justify-content: center !important;
-        cursor: pointer;
-        margin: 0 !important;
-    }
-
-    /* ON状態の時のデザイン（赤背景・白文字） */
-    div[data-testid="stCheckbox"]:has(input:checked) {
-        background-color: #ff4b4b;
-        border-color: #ff4b4b;
-    }
-    div[data-testid="stCheckbox"]:has(input:checked) label {
-        color: white !important;
-        font-weight: bold;
-    }
-
-    /* チェックボックスの小さな四角自体は非表示 */
-    div[data-testid="stCheckbox"] [data-testid="stWidgetLabel"] span:first-child {
-        display: none;
+        height: 45px !important;
+        border-radius: 5px !important;
+        font-weight: bold !important;
+        margin-top: 5px;
     }
 
     /* アップローダーのデザイン */
@@ -72,6 +45,8 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # セッション状態の初期化
+if 'filter_mode' not in st.session_state:
+    st.session_state.filter_mode = 'all'
 if 'selected_product' not in st.session_state:
     st.session_state.selected_product = "全表示"
 
@@ -93,8 +68,16 @@ with st.sidebar:
     # 1. 製品名プルダウン（青枠付き）
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 2. ボタン型トグルスイッチ（幅100%）
-    show_shortage_only = st.checkbox("🚨 不足原料のみを表示", value=False)
+    # 2. ボタンを横並びに配置（プルダウンの幅に合わせる）
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🚨 不足のみ", use_container_width=True):
+            st.session_state.filter_mode = 'shortage'
+    with col2:
+        if st.button("🔄 解除", use_container_width=True):
+            st.session_state.filter_mode = 'all'
+            st.session_state.selected_product = "全表示"
+            st.rerun()
 
     st.divider()
     st.markdown("### 📁 データ読込")
@@ -135,6 +118,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         # --- 表示用の加工（空白化処理） ---
         display_df = df_filtered.copy()
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
+        # 要求量以外の行（納品数・在庫残）の前日在庫を空白にする
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
         # 3. フィルタ：製品名
@@ -151,7 +135,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
         # 4. フィルタ：不足原料のみ
-        if show_shortage_only:
+        if st.session_state.filter_mode == 'shortage':
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             date_cols = display_df.columns[4:]
             shortage_mask = (stock_rows[date_cols] < 0).any(axis=1)
