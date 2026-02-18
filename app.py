@@ -18,23 +18,31 @@ st.markdown("""
         border-right: 1px solid #e9ecef;
     }
     header {visibility: hidden;}
+    
+    /* プルダウンの枠線デザイン */
+    div[data-baseweb="select"] {
+        border: 2px solid #1f77b4 !important;
+        border-radius: 5px !important;
+        margin-bottom: 5px;
+    }
+    
     .stFileUploader { border: 1px solid #e6e9ef; border-radius: 10px; padding: 5px; }
     [data-testid="stFileUploaderSmallNumber"] { display: none !important; }
     [data-testid="stFileUploaderDropzoneInstructions"] { display: none !important; }
     [data-testid="stFileUploader"] section { padding: 0px 10px !important; min-height: 50px !important; }
+    
     div.stButton > button {
         width: 100%;
         height: 45px;
         border-radius: 5px;
-        margin-bottom: 10px;
+        margin-top: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-if 'filter_mode' not in st.session_state:
-    st.session_state.filter_mode = 'all'
-if 'selected_product' not in st.session_state:
-    st.session_state.selected_product = "全表示"
+# セッション状態の管理
+if 'show_shortage' not in st.session_state:
+    st.session_state.show_shortage = False
 
 # --- 1. 左画面（サイドバー） ---
 with st.sidebar:
@@ -49,10 +57,17 @@ with st.sidebar:
         except:
             pass
 
+    # プルダウン（枠線付き）
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    if st.button("🚨 不足原料のみを表示", use_container_width=True):
-        st.session_state.filter_mode = 'shortage'
+    # ボタン一つで状態をトグル（切り替え）
+    btn_label = "✅ 全表示に戻す" if st.session_state.show_shortage else "🚨 不足原料のみを表示"
+    if st.button(btn_label, use_container_width=True):
+        st.session_state.show_shortage = not st.session_state.show_shortage
+        # 不足表示をオフにした時、ついでにプルダウンもリセットしたい場合は以下を有効化
+        if not st.session_state.show_shortage:
+            st.session_state.selected_product = "全表示"
+        st.rerun()
 
     st.divider()
     st.markdown("### 📁 データ読込")
@@ -91,25 +106,23 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         # --- 表示用の加工（空白化処理） ---
         display_df = df_filtered.copy()
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
-        # 要求量以外の行の前日在庫を空白にする
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
         # 3. フィルタ：製品名
-        if st.session_state.selected_product != "全表示":
+        if st.session_state.get('selected_product') and st.session_state.selected_product != "全表示":
             col_h_name = df_req.columns[7]
             col_c_name = df_req.columns[2]
             matched_materials = df_req[df_req[col_h_name] == st.session_state.selected_product][col_c_name].unique().tolist()
             matched_indices = display_df[display_df['品番'].isin(matched_materials)].index
             all_indices = []
             for idx in matched_indices:
-                # 品番列にIDが入っているのは「要求量」行。ここを起点に3行セットを取得
                 for offset in [0, 1, 2]:
                     if idx + offset in display_df.index:
                         all_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # 4. フィルタ：不足原料のみ
-        if st.session_state.filter_mode == 'shortage':
+        # 4. フィルタ：不足原料のみ（トグル状態を参照）
+        if st.session_state.show_shortage:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             date_cols = display_df.columns[4:]
             shortage_mask = (stock_rows[date_cols] < 0).any(axis=1)
@@ -136,7 +149,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 }
             )
         else:
-            st.info("条件に一致するデータがありません。")
+            st.info("表示可能なデータがありません。")
             
     except Exception as e:
         st.error(f"解析エラー: {e}")
