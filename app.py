@@ -31,17 +31,15 @@ with col2:
                     return 'color: red; font-weight: bold;'
                 return None
 
-            # 表示設定：先頭2列（品番、品名）のみをピン留め固定
+            # 表示設定：左側4列をピン留め固定
             st.dataframe(
                 df_result.style.applymap(color_negative_red).format(precision=3, na_rep=""),
                 use_container_width=True,
                 height=750,
                 hide_index=True,
                 column_config={
-                    "品番": st.column_config.TextColumn("品番", pinned=True, width="medium"),
-                    "品名": st.column_config.TextColumn("品名", pinned=True, width="large"),
-                    "現在庫": st.column_config.NumberColumn("現在庫", format="%.3f"),
-                    "区分": st.column_config.TextColumn("区分"),
+                    "品番": st.column_config.TextColumn("品番", pinned=True),
+                    "品名": st.column_config.TextColumn("品名", pinned=True),
                 }
             )
         except Exception as e:
