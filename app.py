@@ -3,7 +3,7 @@ import pandas as pd
 from calc import process_receipts, create_pivot
 
 st.set_page_config(layout="wide", page_title="生産管理システム")
-st.title("📦 生産管理・在庫管理システム")
+st.title("📉 在庫・所要量推移シミュレーション")
 
 col1, col2 = st.columns([3, 7])
 
@@ -31,19 +31,19 @@ with col2:
             df_req = pd.read_excel(file_req, header=3)
             df_inv = pd.read_excel(file_inv, header=4)
             
-            # 2段表示のデータを作成
+            # 2段・全日程表示のデータを作成
             df_result = create_pivot(df_req, df_inv)
             
-            # マイナス値を赤字にするスタイル
             def color_negative_red(val):
                 if isinstance(val, (int, float)) and val < 0:
                     return 'color: red; font-weight: bold;'
                 return None
 
+            # 数値列のみ小数点3位で表示するフォーマット設定
             st.dataframe(
-                df_result.style.applymap(color_negative_red),
+                df_result.style.applymap(color_negative_red).format(precision=3, na_rep="-"),
                 use_container_width=True,
-                height=700,
+                height=750,
                 hide_index=True
             )
         except Exception as e:
