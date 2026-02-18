@@ -4,7 +4,7 @@ from calc import create_pivot
 
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
-# --- UIデザイン（変更なし） ---
+# --- UIデザイン ---
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -26,35 +26,47 @@ st.markdown("""
 
 col1, col2 = st.columns([1, 3])
 
-with col1:
-    st.markdown("##### 📁 データ読込")
-    file_req = st.file_uploader("1. 所要量一覧表を選択", type=['xlsx', 'xls'], key="req")
-    file_inv = st.file_uploader("2. 在庫一覧表を選択", type=['xlsx', 'xls'], key="inv")
-    file_ord = st.file_uploader("3. 発注リストを選択", type=['xlsx', 'xls'], key="ord")
-    
-    st.divider()
-    
-    selected_product_name = "全表示"
+# セッション状態の初期化（ボタンの状態保持用）
+if 'filter_mode' not in st.session_state:
+    st.session_state.filter_mode = 'normal'
 
-    if file_req:
+with col1:
+    st.markdown("##### 🔍 絞り込み設定")
+    
+    # 1. プルダウン（製品名選択）を一番上に移動
+    selected_product_name = "全表示"
+    if st.session_state.get('req'):
         try:
-            df_req_raw = pd.read_excel(file_req, header=3)
+            df_req_raw = pd.read_excel(st.session_state.req, header=3)
             df_req_raw.columns = df_req_raw.columns.str.strip()
             col_h_name = df_req_raw.columns[7] # 8列目(H列)
-            
-            product_list = df_req_raw[col_h_name].dropna().unique().tolist()
-            product_list.sort()
-            
-            selected_product_name = st.selectbox(
-                "🔍 製品名で絞り込み",
-                options=["全表示"] + product_list,
-                index=0
-            )
+            product_list = sorted(df_req_raw[col_h_name].dropna().unique().tolist())
+            selected_product_name = st.selectbox("製品名で絞り込み", options=["全表示"] + product_list)
         except:
-            st.error("所要量一覧表の解析に失敗しました。")
+            pass
+    else:
+        st.selectbox("製品名で絞り込み", options=["全表示"], disabled=True)
+
+    # 2. 特殊フィルタボタン
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        if st.button("🚨 不足原料のみ", use_container_width=True):
+            st.session_state.filter_mode = 'shortage'
+    with btn_col2:
+        if st.button("🔄 リセット", use_container_width=True):
+            st.session_state.filter_mode = 'normal'
+            st.rerun()
 
     st.divider()
-    st.caption("3つのファイルを読み込むと計算を開始します。")
+
+    # 3. ファイル取り込みを下に配置
+    st.markdown("##### 📁 データ読込")
+    file_req = st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
+    file_inv = st.file_uploader("2. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
+    file_ord = st.file_uploader("3. 発注リスト", type=['xlsx', 'xls'], key="ord")
+    
+    st.divider()
+    st.caption("3つのファイルを読み込むとシミュレーションを開始します。")
 
 with col2:
     st.markdown("<h1 style='text-align: center;'>原料在庫シミュレーション</h1>", unsafe_allow_html=True)
@@ -67,33 +79,44 @@ with col2:
             df_ord = pd.read_excel(file_ord, header=4)
             df_req.columns = df_req.columns.str.strip()
             
-            # 1. まず全データの計算を実行
+            # 全データ計算
             df_result = create_pivot(df_req, df_inv, df_ord)
-            display_df = df_result
+            display_df = df_result.copy()
 
-            # 2. 絞り込みロジックの修正
+            # --- フィルタリングロジック ---
+            
+            # A. 製品名による絞り込み
             if selected_product_name != "全表示":
-                col_h_name = df_req.columns[7] # 8列目（製品名）
-                col_c_name = df_req.columns[2] # 3列目（原料品番）
-                
-                # 選択した製品に使用されている原料の品番リストを取得
+                col_h_name = df_req.columns[7]
+                col_c_name = df_req.columns[2]
                 matched_materials = df_req[df_req[col_h_name] == selected_product_name][col_c_name].unique().tolist()
                 
-                # df_result の「品番」列は、3行セットの1行目にしか入っていないことが多いため、
-                # 前の行の品番で埋める（一時的）か、インデックスを活用して3行ずつ抽出します。
-                
-                # 各原料が3行（要求・納品・在庫）連続していることを利用した抽出
-                # 品番が入っている行のインデックスを取得
-                matched_indices = df_result[df_result['品番'].isin(matched_materials)].index
-                
-                # 各インデックスに対して、その行と続く2行（計3行）のインデックスをすべて集める
-                all_target_indices = []
+                matched_indices = display_df[display_df['品番'].isin(matched_materials)].index
+                all_indices = []
                 for idx in matched_indices:
-                    all_target_indices.extend([idx, idx + 1, idx + 2])
-                
-                # 指定した行だけを抽出（重複削除とソート）
-                display_df = df_result.loc[sorted(list(set(all_target_indices)))]
+                    all_indices.extend([idx, idx+1, idx+2])
+                display_df = display_df.loc[sorted(list(set(all_indices)))]
 
+            # B. 不足原料のみ表示モード
+            if st.session_state.filter_mode == 'shortage':
+                # 在庫残(＝)の行だけを抽出して、0未満があるかチェック
+                stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
+                # 日付カラム（数値データが含まれる列）のみを取得
+                date_cols = display_df.columns[4:]
+                
+                # いずれかの日でマイナスがある行を特定
+                shortage_mask = (stock_rows[date_cols] < 0).any(axis=1)
+                
+                # shortage_maskのインデックスは「在庫残」の行なので、
+                # その2行前(要求)と1行前(納品)も含めて抽出
+                shortage_indices = stock_rows[shortage_mask].index
+                all_shortage_indices = []
+                for idx in shortage_indices:
+                    all_shortage_indices.extend([idx-2, idx-1, idx])
+                
+                display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
+
+            # --- 表示設定 ---
             def color_negative_red(val):
                 if isinstance(val, (int, float)) and val < 0:
                     return 'color: red; font-weight: bold;'
@@ -102,19 +125,17 @@ with col2:
             if not display_df.empty:
                 st.dataframe(
                     display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
-                    use_container_width=True,
-                    height=1000,
-                    hide_index=True,
+                    use_container_width=True, height=1000, hide_index=True,
                     column_config={
                         "品番": st.column_config.TextColumn("品番", pinned=True),
                         "品名": st.column_config.TextColumn("品名", pinned=True),
                     }
                 )
             else:
-                st.info("表示するデータがありません。")
+                st.info("条件に一致する原料はありません。")
             
         except Exception as e:
-            st.error(f"解析エラーが発生しました: {e}")
+            st.error(f"解析エラー: {e}")
     else:
         st.markdown("<br><br><br>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #d1d1d1;'>左側のパネルからデータをアップロードしてください</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #d1d1d1;'>データをアップロードしてください</p>", unsafe_allow_html=True)
