@@ -43,7 +43,7 @@ with col1:
     st.caption("3つのファイルを読み込むと計算を開始します。")
 
 with col2:
-    st.markdown("<h1 style='text-align: center;'>Intelligent Simulator</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>原料在庫シミュレーション</h1>", unsafe_allow_html=True)
     st.markdown("---")
 
     if file_req and file_inv and file_ord:
