@@ -4,7 +4,7 @@ from calc import create_pivot
 
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
-# --- UIデザイン ---
+# --- UIデザイン（変更なし） ---
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -38,17 +38,13 @@ with col1:
 
     if file_req:
         try:
-            # H列（8列目）を製品名としてリスト化
             df_req_raw = pd.read_excel(file_req, header=3)
             df_req_raw.columns = df_req_raw.columns.str.strip()
-            # 8列目なので index は 7
-            col_h_name = df_req_raw.columns[7] 
+            col_h_name = df_req_raw.columns[7] # 8列目(H列)
             
-            # 空白を除去して重複排除
             product_list = df_req_raw[col_h_name].dropna().unique().tolist()
             product_list.sort()
             
-            # プルダウン
             selected_product_name = st.selectbox(
                 "🔍 製品名で絞り込み",
                 options=["全表示"] + product_list,
@@ -66,24 +62,37 @@ with col2:
 
     if file_req and file_inv and file_ord:
         try:
-            # 各ファイルの読み込み
             df_req = pd.read_excel(file_req, header=3)
             df_inv = pd.read_excel(file_inv, header=4)
             df_ord = pd.read_excel(file_ord, header=4)
             df_req.columns = df_req.columns.str.strip()
             
-            # 計算の実行
+            # 1. まず全データの計算を実行
             df_result = create_pivot(df_req, df_inv, df_ord)
             display_df = df_result
 
-            # 絞り込みロジック
+            # 2. 絞り込みロジックの修正
             if selected_product_name != "全表示":
                 col_h_name = df_req.columns[7] # 8列目（製品名）
                 col_c_name = df_req.columns[2] # 3列目（原料品番）
                 
-                # 選択した製品名に紐づく原料品番を特定
-                matched_materials = df_req[df_req[col_h_name] == selected_product_name][col_c_name].unique()
-                display_df = df_result[df_result['品番'].isin(matched_materials)]
+                # 選択した製品に使用されている原料の品番リストを取得
+                matched_materials = df_req[df_req[col_h_name] == selected_product_name][col_c_name].unique().tolist()
+                
+                # df_result の「品番」列は、3行セットの1行目にしか入っていないことが多いため、
+                # 前の行の品番で埋める（一時的）か、インデックスを活用して3行ずつ抽出します。
+                
+                # 各原料が3行（要求・納品・在庫）連続していることを利用した抽出
+                # 品番が入っている行のインデックスを取得
+                matched_indices = df_result[df_result['品番'].isin(matched_materials)].index
+                
+                # 各インデックスに対して、その行と続く2行（計3行）のインデックスをすべて集める
+                all_target_indices = []
+                for idx in matched_indices:
+                    all_target_indices.extend([idx, idx + 1, idx + 2])
+                
+                # 指定した行だけを抽出（重複削除とソート）
+                display_df = df_result.loc[sorted(list(set(all_target_indices)))]
 
             def color_negative_red(val):
                 if isinstance(val, (int, float)) and val < 0:
