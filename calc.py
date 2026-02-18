@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 def create_pivot(df_req, df_inv):
     # 1. 前処理
@@ -22,7 +23,7 @@ def create_pivot(df_req, df_inv):
         aggfunc='sum'
     ).fillna(0)
 
-    # 4. 横軸拡張
+    # 4. 横軸拡張 (1日刻みカレンダー)
     if not pivot.columns.empty:
         all_dates = pd.date_range(start=pivot.columns.min(), end=pivot.columns.max(), freq='D')
         pivot = pivot.reindex(columns=all_dates, fill_value=0.0)
@@ -30,24 +31,26 @@ def create_pivot(df_req, df_inv):
     date_labels = [d.strftime('%y/%m/%d') for d in pivot.columns]
     pivot.columns = date_labels
 
-    # 5. 2段表示の構築（結合風）
+    # 5. 2段表示の構築
     rows = []
     
     for (code, name), req_values in pivot.iterrows():
         initial_stock = current_stock_dict.get(code, 0.0)
         
-        # 1段目: 品番・品名・現在庫を表示
+        # --- 1段目: 品番・品名・現在庫を表示 ---
         usage_row = {
             '品番': code, 
             '品名': name, 
             '現在庫': initial_stock, 
             '区分': '要求量 (ー)'
         }
-        # 2段目: 品番・品名・現在庫を「空（""）」にする（これで結合したように見せる）
+        
+        # --- 2段目: 品番・品名・現在庫を「空（None）」にする ---
+        # Noneにすることで app.py の na_rep="" が適用され、空白になります
         stock_row = {
             '品番': "", 
             '品名': "", 
-            '現在庫': None, # formatで0.000になるのを防ぐため
+            '現在庫': None, 
             '区分': '在庫残 (＝)'
         }
         
@@ -69,10 +72,6 @@ def create_pivot(df_req, df_inv):
     final_cols = fixed_cols + date_labels
     
     return result_df[final_cols]
-
-def process_receipts(df):
-    df.columns = df.columns.str.strip()
-    return df.fillna(0)
 
 def process_receipts(df):
     df.columns = df.columns.str.strip()
