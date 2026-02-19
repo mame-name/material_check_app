@@ -165,21 +165,29 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         # メインテーブル表示
         st.markdown("<h3 style='text-align: center; margin-top: -20px;'>原料在庫シミュレーション</h3>", unsafe_allow_html=True)
         
+        # 0を空白にするためのフォーマット関数
+        def format_zero_to_empty(v):
+            if v == 0:
+                return ""
+            try:
+                return f"{float(v):.3f}"
+            except:
+                return v
+        
         event = st.dataframe(
-                    display_df.style.apply(style_row_groups, axis=None)
-                    .applymap(lambda v: 'color:red;font-weight:bold;' if isinstance(v,(int,float)) and v<0 else None)
-                    .format(precision=3, na_rep="0.000"),
-                    use_container_width=True, 
-                    height=600, 
-                    hide_index=True,
-                    on_select="rerun", 
-                    selection_mode="single-cell",
-                    column_config={
-                        # widthに数値を指定（例: "small", "medium", "large" または 数値）
-                        "品番": st.column_config.TextColumn("品番", pinned=True, width=60),
-                        "品名": st.column_config.TextColumn("品名", pinned=True, width=200),
-                    }
-                )
+            display_df.style.apply(style_row_groups, axis=None)
+            .applymap(lambda v: 'color:red;font-weight:bold;' if isinstance(v,(int,float)) and v<0 else None)
+            .format(format_zero_to_empty, na_rep=""), # ここで0を空白、NaNも空白に設定
+            use_container_width=True, 
+            height=600, 
+            hide_index=True,
+            on_select="rerun", 
+            selection_mode="single-cell",
+            column_config={
+                "品番": st.column_config.TextColumn("品番", pinned=True, width=60),
+                "品名": st.column_config.TextColumn("品名", pinned=True, width=200),
+            }
+        )
 
         # --- 内訳表示ロジック ---
         if event and len(event.selection.cells) > 0:
