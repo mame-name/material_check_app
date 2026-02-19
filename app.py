@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from calc import create_pivot
+from datetime import datetime, timedelta
 
 # ページ設定
 st.set_page_config(layout="wide", page_title="生産管理システム")
@@ -19,8 +20,8 @@ st.markdown("""
     }
     header {visibility: hidden;}
 
-    /* プルダウンの枠線デザイン（青枠） */
-    div[data-baseweb="select"] {
+    /* プルダウンと日付入力の枠線デザイン（青枠） */
+    div[data-baseweb="select"], div[data-baseweb="date-input-container"] {
         border: 2px solid #1f77b4 !important;
         border-radius: 5px !important;
         background-color: white !important;
@@ -63,7 +64,13 @@ with st.sidebar:
     # 1. 製品名プルダウン（青枠付き）
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 2. トグルスイッチ
+    # 2. 日付範囲設定（青枠付き）
+    st.markdown("**表示終了日を指定**")
+    # 初期値：今日 + 14日
+    default_end = (datetime.now() + timedelta(days=14)).date()
+    end_date = st.date_input("終了日", value=default_end, label_visibility="collapsed")
+
+    # 3. トグルスイッチ
     show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
 
     st.divider()
@@ -101,8 +108,17 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         
         df_filtered = df_raw_result.drop(index=all_exclude_indices, errors='ignore').reset_index(drop=True)
         
-        # --- 表示用の加工（空白化処理） ---
-        display_df = df_filtered.copy()
+        # --- 列の絞り込みロジック（ここを追加） ---
+        fixed_cols = ['品番', '品名', '区分', '前日在庫']
+        # 文字列としての日付列のみを取得して判定
+        all_date_cols = [c for c in df_filtered.columns if c not in fixed_cols]
+        # end_date（カレンダー入力値）と比較して表示対象を決める
+        target_date_cols = [c for c in all_date_cols if pd.to_datetime(c).date() <= end_date]
+        
+        # 必要な列だけで表を再構成
+        display_df = df_filtered[fixed_cols + target_date_cols].copy()
+
+        # --- 以降は表示用の加工 ---
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
@@ -119,18 +135,18 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         all_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # 4. フィルタ：不足原料のみ
+        # 4. フィルタ：不足原料のみ（表示されている日付列だけで判定）
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
-            date_cols = display_df.columns[4:]
-            shortage_mask = (stock_rows[date_cols] < 0).any(axis=1)
-            shortage_indices = stock_rows[shortage_mask].index
-            all_shortage_indices = []
-            for idx in shortage_indices:
-                for offset in [-2, -1, 0]:
-                    if idx + offset in display_df.index:
-                        all_shortage_indices.append(idx + offset)
-            display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
+            if target_date_cols:
+                shortage_mask = (stock_rows[target_date_cols] < 0).any(axis=1)
+                shortage_indices = stock_rows[shortage_mask].index
+                all_shortage_indices = []
+                for idx in shortage_indices:
+                    for offset in [-2, -1, 0]:
+                        if idx + offset in display_df.index:
+                            all_shortage_indices.append(idx + offset)
+                display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
 
         # マイナス値を赤字にする
         def color_negative_red(val):
@@ -148,7 +164,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 }
             )
         else:
-            st.info("条件に一致するデータがありません。")
+            st.info("条件に一致するデータがないか、表示範囲内に日付がありません。")
             
     except Exception as e:
         st.error(f"解析エラー: {e}")
