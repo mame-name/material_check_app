@@ -185,8 +185,8 @@ if all(st.session_state.get(k) for k in ['req', 'inv', 'ord', 'ord_sched']):
             on_select="rerun", 
             selection_mode="single-cell",
             column_config={
-                "品番": st.column_config.TextColumn("品番", pinned=True, width=60),
-                "品名": st.column_config.TextColumn("品名", pinned=True, width=200),
+                "品番": st.column_config.TextColumn("品番", pinned=True, width=60, color="#333333"),
+                "品名": st.column_config.TextColumn("品名", pinned=True, width=200, color="#333333"),
             }
         )
 
