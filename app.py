@@ -70,7 +70,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             on_select="rerun", selection_mode="single-cell"
         )
 
-        # --- 内訳表示ロジック ---
+        # --- 内訳表示ロジック（スリム版） ---
         if event and len(event.selection.cells) > 0:
             cell = event.selection.cells[0]
             r_val = cell.get('row') if isinstance(cell, dict) else cell[0]
@@ -83,15 +83,12 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             row_data = plot_df.iloc[r_idx]
 
             if row_data['区分'] == '要求量 (ー)' and selected_date_str not in fixed_cols:
-                # 品番のクリーニング
                 target_code = str(row_data['品番']).strip()
                 
                 # 所要量一覧から抽出
-                # 2:品番, 5:要求日, 7:要求元品名, 11:基準単位数量, 12:単位
+                # 2:品番, 5:要求日, 7:要求元品名, 11:基準単位数量
                 d_hinban = df_req.iloc[:, 2].astype(str).str.strip()
                 detail_df = df_req[d_hinban == target_code].copy()
-                
-                # 日付の比較（年月日のみの一致を確認）
                 detail_df['temp_date'] = pd.to_datetime(detail_df.iloc[:, 5], errors='coerce').dt.strftime('%y/%m/%d')
                 
                 res = detail_df[detail_df['temp_date'] == selected_date_str].copy()
@@ -100,15 +97,15 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 st.markdown(f"#### 📋 {selected_date_str} の内訳 : {row_data['品名']}")
                 
                 if not res.empty:
-                    # 11:基準単位数量, 12:単位
-                    view_df = res.iloc[:, [5, 7, 11, 12]].copy()
-                    view_df.columns = ['要求日', '使用製品名', '数量', '単位']
+                    # 5:要求日, 7:要求元品名, 11:基準単位数量
+                    view_df = res.iloc[:, [7, 11]].copy()
+                    view_df.columns = ['使用製品名', '数量']
                     
-                    # 同じ製品があれば数量を合算（単位も保持）
-                    view_df = view_df.groupby(['要求日', '使用製品名', '単位'])['数量'].sum().reset_index()
+                    # 同じ製品があれば数量を合算
+                    view_df = view_df.groupby(['使用製品名'])['数量'].sum().reset_index()
                     
-                    # 列の並び替え
-                    st.table(view_df[['使用製品名', '数量', '単位']])
+                    # インデックスを隠して表示
+                    st.dataframe(view_df, use_container_width=True, hide_index=True)
                 else:
                     st.warning("この日の明細データが見つかりませんでした。")
                 st.markdown('</div>', unsafe_allow_html=True)
