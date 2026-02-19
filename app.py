@@ -79,23 +79,26 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             on_select="rerun", selection_mode="single-cell"
         )
 
-        # --- 徹底ガード版：内訳表示ロジック ---
+        # --- 最終解：列名ダイレクト取得ロジック ---
         if event and len(event.selection.cells) > 0:
             cell_info = event.selection.cells[0]
             
-            # 型が辞書かタプルかに関わらず、確実に整数（int）として抽出
-            raw_r = cell_info.get('row') if isinstance(cell_info, dict) else cell_info[0]
-            raw_c = cell_info.get('column') if isinstance(cell_info, dict) else cell_info[1]
+            # 1. 行の特定（辞書でもタプルでも対応）
+            r_val = cell_info.get('row') if isinstance(cell_info, dict) else cell_info[0]
+            r_idx = int(r_val[0] if isinstance(r_val, list) else r_val)
             
-            # ここが重要：リストや配列で入ってきた場合に最初の1つを整数で取り出す
-            r_idx = int(raw_r[0] if isinstance(raw_r, (list, pd.Index)) else raw_r)
-            c_idx = int(raw_c[0] if isinstance(raw_c, (list, pd.Index)) else raw_c)
-            
-            # 列名と行データを取得
-            selected_date = plot_df.columns[c_idx]
+            # 2. 列の特定（ここが修正のキモ）
+            # columnに直接 '26/02/20' のような文字列が入ってくるケースに対応
+            c_val = cell_info.get('column') if isinstance(cell_info, dict) else cell_info[1]
+            if isinstance(c_val, str):
+                selected_date = c_val  # 文字列ならそのまま日付として使う
+            else:
+                c_idx = int(c_val[0] if isinstance(c_val, list) else c_val)
+                selected_date = plot_df.columns[c_idx]
+
+            # 3. データの取得
             row_data = plot_df.iloc[r_idx]
 
-            # 区分が「要求量」かつ日付列が選ばれている場合のみ処理
             if row_data['区分'] == '要求量 (ー)' and selected_date not in fixed_cols:
                 target_code = row_data['品番']
                 target_name = row_data['品名']
