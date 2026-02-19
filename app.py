@@ -201,38 +201,45 @@ if all(st.session_state.get(k) for k in ['req', 'inv', 'ord', 'ord_sched']):
             }
         )
 
-        # --- 内訳表示ロジック（完全に維持） ---
+        # --- 内訳表示ロジック ---
         if event and len(event.selection.cells) > 0:
             cell = event.selection.cells[0]
             r_val = cell.get('row') if isinstance(cell, dict) else cell[0]
             c_val = cell.get('column') if isinstance(cell, dict) else cell[1]
             r_idx = int(r_val[0] if isinstance(r_val, list) else r_val)
             
-            if isinstance(c_val, str): 
-                sel_date = c_val
-            else: 
-                sel_date = display_df.columns[int(c_val[0] if isinstance(c_val, list) else c_val)]
+            # --- 追加：1行目(余り0)以外は処理しない ---
+            # 3行1セットなので、0, 3, 6...行目（要求量行）のみ許可する
+            if r_idx % 3 == 0:
+                if isinstance(c_val, str): 
+                    sel_date = c_val
+                else: 
+                    sel_date = display_df.columns[int(c_val[0] if isinstance(c_val, list) else c_val)]
 
-            row_data = display_df.iloc[r_idx]
+                row_data = display_df.iloc[r_idx]
 
-            if row_data['区分'] == '要求量 (ー)' and sel_date not in fixed_cols:
-                target_code = str(row_data['品番']).strip()
-                target_name = row_data['品名']
-                
-                d_hinban = df_req.iloc[:, 2].astype(str).str.strip()
-                detail_df = df_req[d_hinban == target_code].copy()
-                detail_df['date_match'] = pd.to_datetime(detail_df.iloc[:, 5], errors='coerce').dt.strftime('%y/%m/%d')
-                res = detail_df[detail_df['date_match'] == sel_date].copy()
+                # 日付列が選択されているか確認
+                if sel_date not in fixed_cols:
+                    target_code = str(row_data['品番']).strip()
+                    target_name = row_data['品名']
+                    
+                    d_hinban = df_req.iloc[:, 2].astype(str).str.strip()
+                    detail_df = df_req[d_hinban == target_code].copy()
+                    detail_df['date_match'] = pd.to_datetime(detail_df.iloc[:, 5], errors='coerce').dt.strftime('%y/%m/%d')
+                    res = detail_df[detail_df['date_match'] == sel_date].copy()
 
-                with detail_placeholder.container():
-                    st.markdown(f'<div class="sidebar-detail-box"><div class="detail-title">📍 {sel_date} {target_name}</div></div>', unsafe_allow_html=True)
-                    if not res.empty:
-                        v_df = res.iloc[:, [7, 11]].copy()
-                        v_df.columns = ['使用製品', '数量']
-                        v_df = v_df.groupby(['使用製品'])['数量'].sum().reset_index()
-                        st.dataframe(v_df, hide_index=True, use_container_width=True)
-                    else:
-                        st.caption("明細なし")
+                    with detail_placeholder.container():
+                        st.markdown(f'<div class="sidebar-detail-box"><div class="detail-title">📍 {sel_date} {target_name}</div></div>', unsafe_allow_html=True)
+                        if not res.empty:
+                            v_df = res.iloc[:, [7, 11]].copy()
+                            v_df.columns = ['使用製品', '数量']
+                            v_df = v_df.groupby(['使用製品'])['数量'].sum().reset_index()
+                            st.dataframe(v_df, hide_index=True, use_container_width=True)
+                        else:
+                            st.caption("明細なし")
+            else:
+                # 2行目・3行目がクリックされた場合は、サイドバーの明細を空にする
+                detail_placeholder.empty()
 
     except Exception as e:
         st.error(f"解析エラー: {e}")
