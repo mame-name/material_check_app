@@ -175,18 +175,29 @@ if all(st.session_state.get(k) for k in ['req', 'inv', 'ord', 'ord_sched']):
         # メインテーブル表示
         st.markdown("<h3 style='text-align: center; margin-top: -20px;'>原料在庫シミュレーション</h3>", unsafe_allow_html=True)
         
+        # --- スタイルの定義 ---
+        styled_df = (
+            display_df.style
+            # 1. 3行ごとの背景色
+            .apply(style_row_groups, axis=None)
+            # 2. 全体の文字色（品番・品名を含む全セル）を濃いグレーに設定
+            .applymap(lambda v: 'color: #333333;') 
+            # 3. 数値がマイナスの場合のみ赤太字で上書き（後から適用したものが優先されます）
+            .applymap(lambda v: 'color: red; font-weight: bold;' if isinstance(v, (int, float)) and v < 0 else None)
+            # 4. 数値のフォーマット
+            .format(format_values, subset=num_cols, na_rep="")
+        )
+
         event = st.dataframe(
-            display_df.style.apply(style_row_groups, axis=None)
-            .applymap(lambda v: 'color:red;font-weight:bold;' if isinstance(v,(int,float)) and v<0 else None)
-            .format(format_values, subset=num_cols, na_rep=""),
+            styled_df,  # スタイル適用済みのオブジェクトを渡す
             use_container_width=True, 
             height=600, 
             hide_index=True,
             on_select="rerun", 
             selection_mode="single-cell",
             column_config={
-                "品番": st.column_config.TextColumn("品番", pinned=True, width=60, color="#333333"),
-                "品名": st.column_config.TextColumn("品名", pinned=True, width=200, color="#333333"),
+                "品番": st.column_config.TextColumn("品番", pinned=True, width=60),
+                "品名": st.column_config.TextColumn("品名", pinned=True, width=200),
             }
         )
 
