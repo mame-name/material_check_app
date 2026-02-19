@@ -88,28 +88,27 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         df_ord = pd.read_excel(st.session_state.ord, header=4)
         df_req.columns = df_req.columns.str.strip()
         
-        # --- ここで「所要量一覧表」の列を日付で絞り込む ---
-        # 基準単位数量（恐らく10列目付近）などの計算に必要な列はすべて残す
-        # 日付として認識できる列だけを end_date で判定する
+        # --- 列の絞り込み（改善版） ---
         req_cols = []
         for col in df_req.columns:
-            try:
-                # 列名が日付として解釈できる場合
-                col_dt = pd.to_datetime(col).date()
-                if col_dt <= end_date:
+            # 列名を日付として解析を試みる
+            parsed_date = pd.to_datetime(col, errors='coerce')
+            
+            if pd.notnull(parsed_date):
+                # 日付として認識できた場合、終了日と比較
+                if parsed_date.date() <= end_date:
                     req_cols.append(col)
-                # 指定日より後の日付列は追加しない
-            except (ValueError, TypeError):
-                # 日付ではない列（品番、品名、基準単位数量など）はすべて残す
+                # 終了日より後の日付列は追加しない（ここでカット）
+            else:
+                # 日付として認識できない列（基本情報など）はすべて残す
                 req_cols.append(col)
         
-        # 必要な列だけに絞った状態で計算へ渡す
         df_req_limited = df_req[req_cols]
         
         # 1. 計算実行
         df_raw_result = create_pivot(df_req_limited, df_inv, df_ord)
         
-        # 列名変更：現在庫 → 前日在庫
+        # 列名変更
         if '現在庫' in df_raw_result.columns:
             df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
         
@@ -125,7 +124,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         
         df_filtered = df_raw_result.drop(index=all_exclude_indices, errors='ignore').reset_index(drop=True)
         
-        # --- 表示用の加工（空白化処理） ---
+        # 表示用の加工
         display_df = df_filtered.copy()
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
@@ -146,7 +145,6 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         # 4. フィルタ：不足原料のみ
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
-            # 計算後の日付列（固定4列より右側）を特定
             date_cols = display_df.columns[4:]
             if not date_cols.empty:
                 shortage_mask = (stock_rows[date_cols] < 0).any(axis=1)
@@ -158,23 +156,20 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                             all_shortage_indices.append(idx + offset)
                 display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
 
-        # マイナス値を赤字にする
+        # スタイル設定
         def color_negative_red(val):
             if isinstance(val, (int, float)) and val < 0:
                 return 'color: red; font-weight: bold;'
             return None
 
-        if not display_df.empty:
-            st.dataframe(
-                display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
-                use_container_width=True, height=800, hide_index=True,
-                column_config={
-                    "品番": st.column_config.TextColumn("品番", pinned=True),
-                    "品名": st.column_config.TextColumn("品名", pinned=True),
-                }
-            )
-        else:
-            st.info("条件に一致するデータがありません。")
+        st.dataframe(
+            display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
+            use_container_width=True, height=800, hide_index=True,
+            column_config={
+                "品番": st.column_config.TextColumn("品番", pinned=True),
+                "品名": st.column_config.TextColumn("品名", pinned=True),
+            }
+        )
             
     except Exception as e:
         st.error(f"解析エラー: {e}")
