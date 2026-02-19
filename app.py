@@ -20,12 +20,17 @@ st.markdown("""
     }
     header {visibility: hidden;}
 
-    /* プルダウンの枠線デザイン（青枠） */
-    div[data-baseweb="select"] {
+    /* プルダウンと日付入力の枠線デザイン（青枠） */
+    div[data-baseweb="select"], div[data-baseweb="date-input-container"] {
         border: 2px solid #1f77b4 !important;
         border-radius: 5px !important;
         background-color: white !important;
         margin-bottom: 20px;
+    }
+    
+    /* 日付入力欄の中の余白調整 */
+    div[data-baseweb="date-input-container"] input {
+        padding: 8px !important;
     }
 
     /* トグルスイッチのラベルを太字にする */
@@ -64,9 +69,10 @@ with st.sidebar:
     # 1. 製品名プルダウン（青枠付き）
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 2. 日付範囲設定（終了日のみ入力）
-    st.markdown("**表示期間の終了日**")
-    end_date = st.date_input("終了日", value=datetime.now(), label_visibility="collapsed")
+    # 2. 日付範囲設定（青枠付き）
+    st.markdown("**表示終了日を指定（空で全表示）**")
+    # value=None でデフォルトを「なし」に設定
+    end_date = st.date_input("終了日", value=None, label_visibility="collapsed", placeholder="日付を選択してください")
     
     # 3. トグルスイッチ（不足のみ表示）
     show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
@@ -125,25 +131,32 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
         # --- 日付列のフィルタリング ---
-        # 固定列（品番〜前日在庫）と、指定範囲内の日付列を結合
         fixed_cols = ['品番', '品名', '区分', '前日在庫']
         date_cols = []
-        target_end_datetime = pd.to_datetime(end_date)
         today_datetime = pd.to_datetime(datetime.now().date())
 
-        for col in display_df.columns:
-            try:
-                col_dt = pd.to_datetime(col)
-                # 今日以降、かつ指定された終了日までの列を採用
-                if today_datetime <= col_dt <= target_end_datetime:
+        if end_date is not None:
+            # 日付が選択されている場合のみフィルタリング
+            target_end_datetime = pd.to_datetime(end_date)
+            for col in display_df.columns:
+                try:
+                    col_dt = pd.to_datetime(col)
+                    if today_datetime <= col_dt <= target_end_datetime:
+                        date_cols.append(col)
+                except (ValueError, TypeError):
+                    continue
+        else:
+            # 日付が未選択の場合は、すべての日付列を表示
+            for col in display_df.columns:
+                try:
+                    pd.to_datetime(col)
                     date_cols.append(col)
-            except (ValueError, TypeError):
-                continue
+                except (ValueError, TypeError):
+                    continue
         
-        # 表示対象の列を確定
         display_df = display_df[fixed_cols + date_cols]
 
-        # 4. フィルタ：不足原料のみ（表示されている日付列の中だけで判定）
+        # 4. フィルタ：不足原料のみ
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             if not date_cols:
@@ -158,7 +171,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                             all_shortage_indices.append(idx + offset)
                 display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
 
-        # マイナス値を赤字にする
+        # スタイル設定
         def color_negative_red(val):
             if isinstance(val, (int, float)) and val < 0:
                 return 'color: red; font-weight: bold;'
@@ -174,7 +187,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 }
             )
         else:
-            st.info("条件に一致するデータがないか、表示範囲内に日付がありません。")
+            st.info("条件に一致するデータがありません。")
             
     except Exception as e:
         st.error(f"解析エラー: {e}")
