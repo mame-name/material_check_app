@@ -162,22 +162,24 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                     styles.iloc[i, :] = 'background-color: #f2f7fb' # 非常に薄い青色
             return styles
 
-        # メインテーブル表示
+        # --- メインテーブル表示 ---
         st.markdown("<h3 style='text-align: center; margin-top: -20px;'>原料在庫シミュレーション</h3>", unsafe_allow_html=True)
         
-        # 0を空白にするためのフォーマット関数
-        def format_zero_to_empty(v):
-            if v == 0:
-                return ""
-            try:
-                return f"{float(v):.3f}"
-            except:
-                return v
-        
+        # 数値列（日付列と前日在庫）のみを対象にフォーマットを適用する関数
+        def format_values(val):
+            if isinstance(val, (int, float)):
+                if val == 0:
+                    return ""
+                return f"{val:.3f}"
+            return val
+
+        # 数値が含まれる可能性のある列（固定列以外すべて）を特定
+        num_cols = [c for c in display_df.columns if c not in ['品番', '品名', '区分']]
+
         event = st.dataframe(
             display_df.style.apply(style_row_groups, axis=None)
             .applymap(lambda v: 'color:red;font-weight:bold;' if isinstance(v,(int,float)) and v<0 else None)
-            .format(format_zero_to_empty, na_rep=""), # ここで0を空白、NaNも空白に設定
+            .format(format_values, subset=num_cols, na_rep=""), # 数値列のみに適用
             use_container_width=True, 
             height=600, 
             hide_index=True,
