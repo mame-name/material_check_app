@@ -47,11 +47,10 @@ with st.sidebar:
         except: pass
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 2. 表示終了日（初期値は今日から2週間後）
+    # 2. 表示終了日（初期値は今日+14日）
     st.markdown("**表示終了日を指定**")
-    if 'end_date_val' not in st.session_state:
-        st.session_state.end_date_val = (datetime.now() + timedelta(days=14)).date()
-    end_date = st.date_input("終了日", value=st.session_state.end_date_val, label_visibility="collapsed")
+    default_date = (datetime.now() + timedelta(days=14)).date()
+    end_date = st.date_input("終了日", value=default_date, label_visibility="collapsed")
     
     # 3. 不足トグル
     show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
@@ -73,70 +72,55 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         df_ord = pd.read_excel(st.session_state.ord, header=4)
         df_req.columns = df_req.columns.str.strip()
         
-        # 1. 計算実行
+        # 計算結果の取得
         df_raw = create_pivot(df_req, df_inv, df_ord)
         if '現在庫' in df_raw.columns:
             df_raw = df_raw.rename(columns={'現在庫': '前日在庫'})
 
-        # B. 日付による「列」の切り落とし（最優先）
-        # 固定列を除いた「日付列」だけをリストアップ
+        # B. 【単純ロジック】列名の日付でフィルタリング
         fixed_cols = ['品番', '品名', '区分', '前日在庫']
-        all_cols = df_raw.columns.tolist()
         
-        # 表示すべき日付列だけを判定して選別
-        target_date_cols = []
-        for col in all_cols:
-            if col not in fixed_cols:
-                try:
-                    # 列名(日付)がカレンダーで選んだ日付より後なら、そこで追加を止める
-                    if pd.to_datetime(col).date() > end_date:
-                        continue
-                    target_date_cols.append(col)
-                except:
-                    continue # 日付として読めない列は無視
+        # 日付列（4列目以降）の中から、指定日までの列名を抽出
+        date_cols = [c for c in df_raw.columns if c not in fixed_cols]
+        # 文字列として比較可能な形式で、指定日以前の列だけを残す
+        active_date_cols = [c for c in date_cols if pd.to_datetime(c).date() <= end_date]
         
-        # ★ ここで表を物理的に作り直す
-        display_df = df_raw[fixed_cols + target_date_cols].copy()
+        # 最終的に表示する列：固定列 + 絞った日付列
+        display_df = df_raw[fixed_cols + active_date_cols].copy()
 
-        # C. フィルタリング処理（行の絞り込み）
+        # C. 各種フィルタ（行の絞り込み）
         # 1. 製品名フィルタ
         if st.session_state.selected_product != "全表示":
             col_h_name = df_req.columns[7]
             col_c_name = df_req.columns[2]
-            matched_materials = df_req[df_req[col_h_name] == st.session_state.selected_product][col_c_name].unique().tolist()
-            display_df = display_df[display_df['品番'].isin(matched_materials)]
+            materials = df_req[df_req[col_h_name] == st.session_state.selected_product][col_c_name].unique()
+            display_df = display_df[display_df['品番'].isin(materials)]
 
         # 2. 不足フィルタ
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
-            # 絞り込んだ後の日付列（target_date_cols）の中にマイナスがあるか
-            if target_date_cols:
-                shortage_indices = stock_rows[(stock_rows[target_date_cols] < 0).any(axis=1)].index
-                all_indices = []
-                for idx in shortage_indices:
-                    all_indices.extend([idx-2, idx-1, idx])
-                display_df = display_df.loc[sorted(list(set(all_indices)))]
+            # 画面に出ている日付列だけで不足を判定
+            shortage_mask = (stock_rows[active_date_cols] < 0).any(axis=1)
+            shortage_indices = stock_rows[shortage_mask].index
+            all_indices = []
+            for idx in shortage_indices:
+                all_indices.extend([idx-2, idx-1, idx])
+            display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # D. 表示用の微調整
-        # 前日在庫の空白化
+        # D. 表示仕上げ
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
-        # マイナス赤字表示
         def color_negative_red(val):
             return 'color: red; font-weight: bold;' if isinstance(val, (int, float)) and val < 0 else None
 
-        # 表の表示
         st.dataframe(
             display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
             use_container_width=True, height=800, hide_index=True,
-            column_config={
-                "品番": st.column_config.TextColumn(pinned=True),
-                "品名": st.column_config.TextColumn(pinned=True),
-            }
+            column_config={"品番": st.column_config.TextColumn(pinned=True), "品名": st.column_config.TextColumn(pinned=True)}
         )
             
     except Exception as e:
         st.error(f"解析エラー: {e}")
 else:
-    st.markdown("<br><br><br><p style='text-align: center; color: #d1d1d1;'>左側から3つのファイルをアップロードしてください</p>", unsafe_allow_html=True)
+    st.markdown("<br><p style='text-align: center; color: #d1d1d1;'>データをアップロードしてください</p>", unsafe_allow_html=True)
