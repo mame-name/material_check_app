@@ -4,7 +4,7 @@ from calc import create_pivot
 from datetime import datetime, timedelta
 
 # --- ページ設定（完成形準拠） ---
-st.set_page_config(layout="wide", page_title="生産管理システム")
+st.set_page_config(layout="wide", page_title="原料在庫量シミュレーション")
 
 # --- 除外設定リスト（完成形をそのまま維持） ---
 EXCLUDE_PART_NUMBERS = [1999999]
