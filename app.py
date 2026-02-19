@@ -152,24 +152,24 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 return 'color: red; font-weight: bold;'
             return None
 
-        # --- 表の表示と選択イベントの取得 ---
+        # --- 表の表示 (selection_modeを single-row に修正) ---
         event = st.dataframe(
             display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
             use_container_width=True, height=500, hide_index=True,
             on_select="rerun",
-            selection_mode="single_row",
+            selection_mode="single-row",
             column_config={
                 "品番": st.column_config.TextColumn("品番", pinned=True),
                 "品名": st.column_config.TextColumn("品名", pinned=True),
             }
         )
 
-        # --- 選択行に基づいた内訳表示 (付近に出るイメージ) ---
+        # --- 選択行の内訳表示エリア ---
         if event and len(event.selection.rows) > 0:
             row_idx = event.selection.rows[0]
-            # 3行セットを考慮して品番を取得
             selected_p_code = display_df.iloc[row_idx]['品番']
-            if not selected_p_code: # 品番が空（納品・在庫行）なら上を探す
+            # 3行セット対応
+            if not selected_p_code:
                 for i in range(1, 3):
                     if row_idx - i >= 0:
                         code = display_df.iloc[row_idx - i]['品番']
@@ -180,23 +180,18 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             else:
                 selected_p_name = display_df.iloc[row_idx]['品名']
 
-            # 内訳ポップアップ（のような表示）
-            with st.container():
-                st.markdown(f"#### 🔍 {selected_p_name} ({selected_p_code}) の要求内訳")
-                # df_req から詳細を抽出
-                col_hinban = df_req.columns[2]
-                col_seihin = df_req.columns[7]
-                col_date = df_req.columns[1]
-                col_qty = df_req.columns[10]
+            st.markdown(f"#### 🔍 {selected_p_name} ({selected_p_code}) の要求内訳")
+            col_hinban = df_req.columns[2]
+            col_seihin = df_req.columns[7]
+            col_date = df_req.columns[1]
+            col_qty = df_req.columns[10]
 
-                detail = df_req[df_req[col_hinban] == selected_p_code][[col_date, col_seihin, col_qty]].copy()
-                detail.columns = ['要求日', '使用製品名', '要求量']
-                detail['要求日'] = pd.to_datetime(detail['要求日']).dt.strftime('%y/%m/%d')
-                detail = detail[detail['要求日'] <= end_date_str].sort_values('要求日')
-                
-                st.dataframe(detail, use_container_width=True, hide_index=True)
-        else:
-            st.info("👆 表の行をクリックすると、その下に詳細な内訳が表示されます")
+            detail = df_req[df_req[col_hinban] == selected_p_code][[col_date, col_seihin, col_qty]].copy()
+            detail.columns = ['要求日', '使用製品名', '要求量']
+            detail['要求日'] = pd.to_datetime(detail['要求日']).dt.strftime('%y/%m/%d')
+            detail = detail[detail['要求日'] <= end_date_str].sort_values('要求日')
+            
+            st.dataframe(detail, use_container_width=True, hide_index=True)
             
     except Exception as e:
         st.error(f"解析エラー: {e}")
