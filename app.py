@@ -66,7 +66,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             # 不足フィルタトグル
             show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
 
-            # 【重要】内訳表示用プレースホルダー（トグルと読込の間）
+            # 内訳表示用プレースホルダー（トグルと読込の間）
             st.markdown("---")
             detail_placeholder = st.empty() 
             st.markdown("---")
@@ -77,7 +77,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             st.file_uploader("3. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
         # --- サイドバー表示（ここまで） ---
 
-        # --- 3. メイン画面のフィルタロジック（完成形を完全再現） ---
+        # --- 3. メイン画面のフィルタロジック ---
         fixed_cols = ['品番', '品名', '区分', '前日在庫']
         target_date_cols = [c for c in df_raw_result.columns if c not in fixed_cols and c <= end_date_str]
         display_df = df_raw_result[fixed_cols + target_date_cols].copy()
@@ -85,10 +85,9 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         # 製品フィルタ
         if st.session_state.selected_product != "全表示":
             matched_materials = df_req[df_req.iloc[:, 7] == st.session_state.selected_product].iloc[:, 2].unique().tolist()
-            # 3行セットを維持するために品番が空（区分用の行）も保持
             display_df = display_df[display_df['品番'].isin(matched_materials) | (display_df['品番'] == "")]
 
-        # 不足フィルタ（在庫残がマイナスのセットのみ抽出）
+        # 不足フィルタ
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             if target_date_cols:
@@ -96,7 +95,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 shortage_indices = stock_rows[shortage_mask].index
                 all_short_idx = []
                 for idx in shortage_indices:
-                    all_short_idx.extend([idx-2, idx-1, idx]) # 3行セットで取得
+                    all_short_idx.extend([idx-2, idx-1, idx])
                 display_df = display_df.loc[display_df.index.intersection(all_short_idx)]
 
         # 表示用整形
@@ -114,7 +113,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             on_select="rerun", selection_mode="single-cell"
         )
 
-        # --- 4. 内訳検索ロジック（シンプル表示） ---
+        # --- 4. 内訳検索ロジック（シンプル表示 + 原料名表示） ---
         if event and len(event.selection.cells) > 0:
             cell = event.selection.cells[0]
             # 座標取得
@@ -132,16 +131,17 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             # 要求量行のみ反応
             if row_data['区分'] == '要求量 (ー)' and sel_date not in fixed_cols:
                 target_code = str(row_data['品番']).strip()
+                target_name = row_data['品名'] # 原料名を取得
                 
-                # 所要量一覧から精密に検索 (2:品番, 5:要求日, 7:製品名, 11:数量)
+                # 所要量一覧から検索 (2:品番, 5:要求日, 7:製品名, 11:数量)
                 d_hinban = df_req.iloc[:, 2].astype(str).str.strip()
                 detail_df = df_req[d_hinban == target_code].copy()
                 detail_df['date_match'] = pd.to_datetime(detail_df.iloc[:, 5], errors='coerce').dt.strftime('%y/%m/%d')
                 res = detail_df[detail_df['date_match'] == sel_date].copy()
 
-                # サイドバーに流し込み
+                # サイドバーに流し込み（日付と原料名を横並びに）
                 with detail_placeholder.container():
-                    st.markdown(f'<div class="sidebar-detail-box"><div class="detail-title">📍 {sel_date} 内訳</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="sidebar-detail-box"><div class="detail-title">📍 {sel_date} {target_name}</div></div>', unsafe_allow_html=True)
                     if not res.empty:
                         v_df = res.iloc[:, [7, 11]].copy()
                         v_df.columns = ['使用製品', '数量']
@@ -154,7 +154,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         st.error(f"解析エラーが発生しました: {e}")
 
 else:
-    # データ未アップロード時のサイドバー
+    # 未アップロード時
     with st.sidebar:
         st.markdown("### 📁 データ読込")
         st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
