@@ -176,8 +176,8 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                     selection_mode="single-cell",
                     column_config={
                         # widthに数値を指定（例: "small", "medium", "large" または 数値）
-                        "品番": st.column_config.TextColumn("品番", pinned=True, width=100),
-                        "品名": st.column_config.TextColumn("品名", pinned=True, width=250),
+                        "品番": st.column_config.TextColumn("品番", pinned=True, width=60),
+                        "品名": st.column_config.TextColumn("品名", pinned=True, width=200),
                     }
                 )
 
