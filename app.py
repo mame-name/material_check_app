@@ -160,7 +160,7 @@ if all(st.session_state.get(k) for k in ['req', 'inv', 'ord', 'ord_sched']):
             for i in range(len(df)):
                 group_no = i // 3
                 if group_no % 2 == 1:
-                    styles.iloc[i, :] = 'background-color: #f2f7fb'
+                    styles.iloc[i, :] = 'background-color: #e1f0fa'
             return styles
 
         # 数値フォーマット（0を空白、品番には小数点なし）
@@ -181,7 +181,7 @@ if all(st.session_state.get(k) for k in ['req', 'inv', 'ord', 'ord_sched']):
             # 1. 3行ごとの背景色
             .apply(style_row_groups, axis=None)
             # 2. 全体の文字色（品番・品名を含む全セル）を濃いグレーに設定
-            .applymap(lambda v: 'color: #333333;') 
+            .applymap(lambda v: 'color: #000000;') 
             # 3. 数値がマイナスの場合のみ赤太字で上書き（後から適用したものが優先されます）
             .applymap(lambda v: 'color: red; font-weight: bold;' if isinstance(v, (int, float)) and v < 0 else None)
             # 4. 数値のフォーマット
