@@ -3,7 +3,7 @@ import pandas as pd
 from calc import create_pivot
 from datetime import datetime, timedelta
 
-# --- ページ設定 & UI ---
+# --- ページ設定 & デザイン ---
 st.set_page_config(layout="wide", page_title="生産管理システム")
 st.markdown("""
     <style>
@@ -70,50 +70,55 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         plot_df['前日在庫'] = plot_df['前日在庫'].astype(object)
         plot_df.loc[plot_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
-        st.info("💡 「要求量」の行の数字をクリックすると、内訳が表示されます")
+        st.info("💡 「要求量」の行の数字（セル）をクリックすると、その日の内訳を表示します")
         
-        # セル選択イベント
+        # --- セル選択の設定 ---
         event = st.dataframe(
             plot_df.style.applymap(lambda v: 'color:red;font-weight:bold;' if isinstance(v,(int,float)) and v<0 else None).format(precision=3),
             use_container_width=True, height=500, hide_index=True,
             on_select="rerun", selection_mode="single-cell"
         )
 
-        # --- 内訳表示ロジック ---
+        # --- 刷新された内訳表示ロジック ---
         if event and len(event.selection.cells) > 0:
-            # 安全に座標を取得
-            first_cell = event.selection.cells[0]
-            try:
-                r_idx = first_cell['row']
-                c_idx = first_cell['column']
-            except (TypeError, KeyError):
-                r_idx = first_cell[0]
-                c_idx = first_cell[1]
+            # 座標の取得 (タプルと辞書の両方に対応)
+            cell_info = event.selection.cells[0]
+            r_idx = cell_info.get('row') if isinstance(cell_info, dict) else cell_info[0]
+            c_idx = cell_info.get('column') if isinstance(cell_info, dict) else cell_info[1]
             
+            # 列名から日付を取得
             selected_date = plot_df.columns[c_idx]
+            # 行データから品番・区分を取得
             row_data = plot_df.iloc[r_idx]
 
-            # 「要求量」の行かつ日付列が選択された時だけ実行
+            # 区分が「要求量」かつ日付列が選ばれている場合のみ処理
             if row_data['区分'] == '要求量 (ー)' and selected_date not in fixed_cols:
                 target_code = row_data['品番']
                 target_name = row_data['品名']
                 
                 if target_code:
-                    detail = df_req[df_req[df_req.columns[2]] == target_code].copy()
-                    detail['要求日_fmt'] = pd.to_datetime(detail[df_req.columns[1]]).dt.strftime('%y/%m/%d')
+                    # calc.pyの参照列に基づき抽出 (2:品番, 1:要求日, 7:製品名, 10:数量)
+                    col_hinban = df_req.columns[2]
+                    col_date = df_req.columns[1]
+                    col_seihin = df_req.columns[7]
+                    col_qty = df_req.columns[10]
+
+                    # 日付を文字列 '%y/%m/%d' に揃えてフィルタ
+                    detail_df = df_req[df_req[col_hinban] == target_code].copy()
+                    detail_df['date_str'] = pd.to_datetime(detail_df[col_date]).dt.strftime('%y/%m/%d')
                     
-                    res = detail[detail['要求日_fmt'] == selected_date][[df_req.columns[1], df_req.columns[7], df_req.columns[10]]]
-                    res.columns = ['要求日', '使用製品', '要求量']
+                    final_res = detail_df[detail_df['date_str'] == selected_date][[col_date, col_seihin, col_qty]]
+                    final_res.columns = ['要求日', '使用製品', '数量']
 
                     st.markdown(f'<div class="detail-area">', unsafe_allow_html=True)
-                    st.markdown(f'#### 📋 {selected_date} の要求内訳: {target_name}')
-                    if not res.empty:
-                        st.table(res)
+                    st.markdown(f'#### 📋 {selected_date} の内訳 : {target_name} ({target_code})')
+                    if not final_res.empty:
+                        st.table(final_res)
                     else:
-                        st.write("この日の個別要求データはありません（0表示など）。")
+                        st.write("この日の個別要求はありません。")
                     st.markdown('</div>', unsafe_allow_html=True)
 
     except Exception as e:
-        st.error(f"解析エラー: {e}")
+        st.error(f"解析エラーが発生しました。別のセルを試してください。: {e}")
 else:
     st.markdown("<br><br><br><p style='text-align: center; color: #d1d1d1;'>データをアップロードしてください</p>", unsafe_allow_html=True)
