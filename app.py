@@ -52,7 +52,6 @@ if 'selected_product' not in st.session_state:
 with st.sidebar:
     st.markdown("### 🔍 絞り込み設定")
     
-    # 1. 製品名リストの作成
     product_options = ["全表示"]
     if st.session_state.get('req'):
         try:
@@ -63,18 +62,13 @@ with st.sidebar:
         except:
             pass
 
-    # 製品名選択
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 2. 表示終了日指定（青枠適用）
     st.markdown("**表示終了日を指定**")
     default_end = (datetime.now() + timedelta(days=14)).date()
     end_date = st.date_input("終了日", value=default_end, label_visibility="collapsed")
-    
-    # calc.pyの形式（年2桁文字列）に合わせて変換
     end_date_str = end_date.strftime('%y/%m/%d')
 
-    # 3. トグルスイッチ
     show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
 
     st.divider()
@@ -93,9 +87,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         df_ord = pd.read_excel(st.session_state.ord, header=4)
         df_req.columns = df_req.columns.str.strip()
         
-        # 1. 計算実行
         df_raw_result = create_pivot(df_req, df_inv, df_ord)
-        
         if df_raw_result.empty:
             st.warning("計算結果が空です。")
             st.stop()
@@ -103,98 +95,103 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         if '現在庫' in df_raw_result.columns:
             df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
         
-        # --- 列の絞り込み ---
         fixed_cols = ['品番', '品名', '区分', '前日在庫']
         target_date_cols = [c for c in df_raw_result.columns if c not in fixed_cols and c <= end_date_str]
-        
         df_limited = df_raw_result[fixed_cols + target_date_cols].copy()
 
-        # 2. 除外フィルタ
-        exclude_mask = (
-            df_limited['品番'].isin(EXCLUDE_PART_NUMBERS) | 
-            df_limited['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
-        )
-        exclude_indices = df_limited[exclude_mask].index
-        all_exclude = []
-        for idx in exclude_indices:
-            all_exclude.extend([idx, idx+1, idx+2])
-        df_filtered = df_limited.drop(index=all_exclude, errors='ignore').reset_index(drop=True)
+        # 除外フィルタ
+        exclude_mask = (df_limited['品番'].isin(EXCLUDE_PART_NUMBERS) | df_limited['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False))
+        df_filtered = df_limited.drop(index=df_limited[exclude_mask].index).reset_index(drop=True)
         
-        # 表示用の加工
         display_df = df_filtered.copy()
-        display_df['前日在庫'] = display_df['前日在庫'].astype(object)
-        display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
-
-        # 3. フィルタ：製品名
+        
+        # フィルタ：製品名
         if st.session_state.selected_product != "全表示":
             col_c_name = df_req.columns[2]
             matched_materials = df_req[df_req[df_req.columns[7]] == st.session_state.selected_product][col_c_name].unique().tolist()
             matched_indices = display_df[display_df['品番'].isin(matched_materials)].index
             all_indices = []
-            for idx in matched_indices:
-                all_indices.extend([idx, idx+1, idx+2])
+            for idx in matched_indices: all_indices.extend([idx, idx+1, idx+2])
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # 4. フィルタ：不足原料のみ
+        # フィルタ：不足原料のみ
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             if target_date_cols:
                 shortage_mask = (stock_rows[target_date_cols] < 0).any(axis=1)
                 shortage_indices = stock_rows[shortage_mask].index
                 all_short_idx = []
-                for idx in shortage_indices:
-                    all_short_idx.extend([idx-2, idx-1, idx])
+                for idx in shortage_indices: all_short_idx.extend([idx-2, idx-1, idx])
                 display_df = display_df.loc[sorted(list(set(all_short_idx)))]
 
-        # スタイル設定
-        def color_negative_red(val):
-            if isinstance(val, (int, float)) and val < 0:
-                return 'color: red; font-weight: bold;'
-            return None
+        plot_df = display_df.copy()
+        plot_df['前日在庫'] = plot_df['前日在庫'].astype(object)
+        plot_df.loc[plot_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
-        # --- 表の表示 (selection_modeを single-row に修正) ---
+        def color_negative_red(val):
+            return 'color: red; font-weight: bold;' if isinstance(val, (int, float)) and val < 0 else None
+
+        # --- 表の表示 (single-cellモード) ---
         event = st.dataframe(
-            display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
+            plot_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
             use_container_width=True, height=500, hide_index=True,
             on_select="rerun",
-            selection_mode="single-row",
+            selection_mode="single-cell", # セル選択に変更
             column_config={
                 "品番": st.column_config.TextColumn("品番", pinned=True),
                 "品名": st.column_config.TextColumn("品名", pinned=True),
             }
         )
 
-        # --- 選択行の内訳表示エリア ---
-        if event and len(event.selection.rows) > 0:
-            row_idx = event.selection.rows[0]
-            selected_p_code = display_df.iloc[row_idx]['品番']
-            # 3行セット対応
-            if not selected_p_code:
-                for i in range(1, 3):
-                    if row_idx - i >= 0:
-                        code = display_df.iloc[row_idx - i]['品番']
-                        if code:
-                            selected_p_code = code
-                            selected_p_name = display_df.iloc[row_idx - i]['品名']
-                            break
-            else:
-                selected_p_name = display_df.iloc[row_idx]['品名']
-
-            st.markdown(f"#### 🔍 {selected_p_name} ({selected_p_code}) の要求内訳")
-            col_hinban = df_req.columns[2]
-            col_seihin = df_req.columns[7]
-            col_date = df_req.columns[1]
-            col_qty = df_req.columns[10]
-
-            detail = df_req[df_req[col_hinban] == selected_p_code][[col_date, col_seihin, col_qty]].copy()
-            detail.columns = ['要求日', '使用製品名', '要求量']
-            detail['要求日'] = pd.to_datetime(detail['要求日']).dt.strftime('%y/%m/%d')
-            detail = detail[detail['要求日'] <= end_date_str].sort_values('要求日')
+        # --- 選択されたセルに基づいた内訳表示 ---
+        if event and len(event.selection.cells) > 0:
+            cell = event.selection.cells[0]
+            row_idx = cell['row']
+            col_idx = cell['column']
             
-            st.dataframe(detail, use_container_width=True, hide_index=True)
+            # 列名（日付）を取得
+            selected_col_name = plot_df.columns[col_idx]
+            
+            # 固定列（品番・品名・区分・前日在庫）が選ばれた場合は無視
+            if selected_col_name in fixed_cols:
+                st.info("日付のマス（要求量）を選択してください。")
+            else:
+                # 品番を特定（3行セット対応）
+                selected_p_code = plot_df.iloc[row_idx]['品番']
+                if not selected_p_code:
+                    for i in range(1, 3):
+                        if row_idx - i >= 0:
+                            code = plot_df.iloc[row_idx - i]['品番']
+                            if code:
+                                selected_p_code = code
+                                selected_p_name = plot_df.iloc[row_idx - i]['品名']
+                                break
+                else:
+                    selected_p_name = plot_df.iloc[row_idx]['品名']
+
+                # 内訳抽出
+                col_hinban = df_req.columns[2]
+                col_seihin = df_req.columns[7]
+                col_date_orig = df_req.columns[1]
+                col_qty = df_req.columns[10]
+
+                # 元データの要求日を文字列に変換して比較
+                detail = df_req[df_req[col_hinban] == selected_p_code].copy()
+                detail['要求日_str'] = pd.to_datetime(detail[col_date_orig]).dt.strftime('%y/%m/%d')
+                
+                # 特定の「日付」と「品番」で絞り込み
+                specific_detail = detail[detail['要求日_str'] == selected_col_name][[col_date_orig, col_seihin, col_qty]]
+                specific_detail.columns = ['要求日', '使用製品名', '要求量']
+
+                st.markdown(f"#### 🔍 {selected_col_name} の内訳: {selected_p_name}")
+                if not specific_detail.empty:
+                    st.table(specific_detail) # その場で見やすいようにコンパクトに
+                else:
+                    st.write("この日の要求はありません（在庫計算上の0表示など）。")
+        else:
+            st.info("👆 表の中の「数字（マス）」をクリックすると、その日の要求内訳が表示されます。")
             
     except Exception as e:
         st.error(f"解析エラー: {e}")
 else:
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #d1d1d1; font-size: 1.2rem;'>左側のパネルからデータをアップロードしてください</p>", unsafe_allow_html=True)
+    st.markdown("<br><br><br><p style='text-align: center; color: #d1d1d1;'>データをアップロードしてください</p>", unsafe_allow_html=True)
