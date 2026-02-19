@@ -96,29 +96,40 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         if '現在庫' in df_raw_result.columns:
             df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
         
-        # 2. 除外フィルタ
+        # --- 【強化版】列の絞り込みロジック ---
+        fixed_cols = ['品番', '品名', '区分', '前日在庫']
+        
+        def is_target_column(col_name):
+            # 固定列は必ず残す
+            if col_name in fixed_cols:
+                return True
+            try:
+                # 列名を日付に変換して比較（型エラーを防ぐため慎重に変換）
+                col_dt = pd.to_datetime(col_name).date()
+                return col_dt <= end_date
+            except:
+                # 日付として解釈できないイレギュラーな列は落とす
+                return False
+
+        # 全列名を検査
+        target_cols = [c for c in df_raw_result.columns if is_target_column(c)]
+        # 物理的に列を制限したデータフレームを作成
+        df_limited = df_raw_result[target_cols].copy()
+
+        # 2. 除外フィルタ（品番・品名キーワード）
         exclude_mask = (
-            df_raw_result['品番'].isin(EXCLUDE_PART_NUMBERS) | 
-            df_raw_result['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
+            df_limited['品番'].astype(str).isin([str(x) for x in EXCLUDE_PART_NUMBERS]) | 
+            df_limited['品名'].astype(str).str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
         )
-        exclude_start_indices = df_raw_result[exclude_mask].index
+        exclude_start_indices = df_limited[exclude_mask].index
         all_exclude_indices = []
         for idx in exclude_start_indices:
             all_exclude_indices.extend([idx, idx+1, idx+2])
         
-        df_filtered = df_raw_result.drop(index=all_exclude_indices, errors='ignore').reset_index(drop=True)
+        df_filtered = df_limited.drop(index=all_exclude_indices, errors='ignore').reset_index(drop=True)
         
-        # --- 列の絞り込みロジック（ここを追加） ---
-        fixed_cols = ['品番', '品名', '区分', '前日在庫']
-        # 文字列としての日付列のみを取得して判定
-        all_date_cols = [c for c in df_filtered.columns if c not in fixed_cols]
-        # end_date（カレンダー入力値）と比較して表示対象を決める
-        target_date_cols = [c for c in all_date_cols if pd.to_datetime(c).date() <= end_date]
-        
-        # 必要な列だけで表を再構成
-        display_df = df_filtered[fixed_cols + target_date_cols].copy()
-
-        # --- 以降は表示用の加工 ---
+        # --- 表示用の加工（空白化処理） ---
+        display_df = df_filtered.copy()
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
@@ -127,7 +138,9 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             col_h_name = df_req.columns[7]
             col_c_name = df_req.columns[2]
             matched_materials = df_req[df_req[col_h_name] == st.session_state.selected_product][col_c_name].unique().tolist()
-            matched_indices = display_df[display_df['品番'].isin(matched_materials)].index
+            # 品番を文字列比較で確実にマッチング
+            matched_materials = [str(m) for m in matched_materials]
+            matched_indices = display_df[display_df['品番'].astype(str).isin(matched_materials)].index
             all_indices = []
             for idx in matched_indices:
                 for offset in [0, 1, 2]:
@@ -135,11 +148,12 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         all_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # 4. フィルタ：不足原料のみ（表示されている日付列だけで判定）
+        # 4. フィルタ：不足原料のみ（現在表示されている列だけで判定）
+        active_date_cols = [c for c in display_df.columns if c not in fixed_cols]
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
-            if target_date_cols:
-                shortage_mask = (stock_rows[target_date_cols] < 0).any(axis=1)
+            if active_date_cols:
+                shortage_mask = (stock_rows[active_date_cols] < 0).any(axis=1)
                 shortage_indices = stock_rows[shortage_mask].index
                 all_shortage_indices = []
                 for idx in shortage_indices:
@@ -164,7 +178,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 }
             )
         else:
-            st.info("条件に一致するデータがないか、表示範囲内に日付がありません。")
+            st.info("表示範囲内にデータがないか、フィルタ条件に一致しません。")
             
     except Exception as e:
         st.error(f"解析エラー: {e}")
