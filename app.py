@@ -3,13 +3,24 @@ import pandas as pd
 from calc import create_pivot
 from datetime import datetime, timedelta
 
-# --- 1. ページ設定 & デザイン ---
+# ページ設定
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
+# --- 除外設定リスト ---
+EXCLUDE_PART_NUMBERS = [1999999]
+EXCLUDE_KEYWORDS = ["半製品"]
+
+# --- UIデザイン（CSS） ---
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
-    /* プルダウン、日付入力の枠線デザイン（青枠） */
+    section[data-testid="stSidebar"] {
+        background-color: #ffffff !important;
+        border-right: 1px solid #e9ecef;
+    }
+    header {visibility: hidden;}
+
+    /* プルダウン、日付入力、テキスト入力の枠線デザイン（青枠） */
     div[data-baseweb="select"], 
     div[data-baseweb="date-input-container"],
     div[data-testid="stDateInput"] > div {
@@ -37,11 +48,11 @@ st.markdown("""
 if 'selected_product' not in st.session_state:
     st.session_state.selected_product = "全表示"
 
-# --- 2. 左画面（サイドバー）：操作パネル ---
+# --- 1. 左画面（サイドバー）：操作パネル ---
 with st.sidebar:
     st.markdown("### 🔍 絞り込み設定")
     
-    # 製品名リストの作成
+    # 1. 製品名リストの作成
     product_options = ["全表示"]
     if st.session_state.get('req'):
         try:
@@ -52,15 +63,15 @@ with st.sidebar:
         except:
             pass
 
-    # 1. 製品名プルダウン
+    # 製品名選択
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 2. 表示終了日指定（青枠付き）
+    # 2. 表示終了日指定（青枠適用）
     st.markdown("**表示終了日を指定**")
     default_end = (datetime.now() + timedelta(days=14)).date()
     end_date = st.date_input("終了日", value=default_end, label_visibility="collapsed")
     
-    # calc.pyの「年2桁文字列」に合わせて変換（ここが絞り込みの肝）
+    # calc.pyの形式（年2桁文字列）に合わせて変換
     end_date_str = end_date.strftime('%y/%m/%d')
 
     # 3. トグルスイッチ
@@ -72,38 +83,49 @@ with st.sidebar:
     st.file_uploader("2. 発注リスト", type=['xlsx', 'xls'], key="ord")
     st.file_uploader("3. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
 
-# --- 3. 右画面（メインエリア）：結果表示 ---
+# --- 2. 右画面（メインエリア）：結果表示 ---
 st.markdown("<h3 style='text-align: center; margin-top: -20px;'>原料在庫シミュレーション</h3>", unsafe_allow_html=True)
 
 if st.session_state.get('req') and st.session_state.get('inv') and st.session_state.get('ord'):
     try:
-        # データ読込
         df_req = pd.read_excel(st.session_state.req, header=3)
         df_inv = pd.read_excel(st.session_state.inv, header=4)
         df_ord = pd.read_excel(st.session_state.ord, header=4)
         df_req.columns = df_req.columns.str.strip()
         
-        # A. 計算実行
+        # 1. 計算実行
         df_raw_result = create_pivot(df_req, df_inv, df_ord)
         
         if df_raw_result.empty:
             st.warning("計算結果が空です。")
             st.stop()
 
-        # 列名変更
         if '現在庫' in df_raw_result.columns:
             df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
         
-        # B. 【日付による列の絞り込み】
+        # --- 列の絞り込み ---
         fixed_cols = ['品番', '品名', '区分', '前日在庫']
-        # calc.pyが生成した列名（%y/%m/%d形式の文字列）とカレンダー入力を比較
         target_date_cols = [c for c in df_raw_result.columns if c not in fixed_cols and c <= end_date_str]
         
-        # 物理的に列を抽出
         df_limited = df_raw_result[fixed_cols + target_date_cols].copy()
 
-        # C. フィルタリング（製品名選択）
-        display_df = df_limited.copy()
+        # 2. 除外フィルタ
+        exclude_mask = (
+            df_limited['品番'].isin(EXCLUDE_PART_NUMBERS) | 
+            df_limited['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
+        )
+        exclude_indices = df_limited[exclude_mask].index
+        all_exclude = []
+        for idx in exclude_indices:
+            all_exclude.extend([idx, idx+1, idx+2])
+        df_filtered = df_limited.drop(index=all_exclude, errors='ignore').reset_index(drop=True)
+        
+        # 表示用の加工
+        display_df = df_filtered.copy()
+        display_df['前日在庫'] = display_df['前日在庫'].astype(object)
+        display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
+
+        # 3. フィルタ：製品名
         if st.session_state.selected_product != "全表示":
             col_c_name = df_req.columns[2]
             matched_materials = df_req[df_req[df_req.columns[7]] == st.session_state.selected_product][col_c_name].unique().tolist()
@@ -113,7 +135,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 all_indices.extend([idx, idx+1, idx+2])
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # D. フィルタリング（不足のみ）
+        # 4. フィルタ：不足原料のみ
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             if target_date_cols:
@@ -124,17 +146,12 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                     all_short_idx.extend([idx-2, idx-1, idx])
                 display_df = display_df.loc[sorted(list(set(all_short_idx)))]
 
-        # 表示用加工（在庫残以外の前日在庫を消す）
-        display_df['前日在庫'] = display_df['前日在庫'].astype(object)
-        display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
-
-        # スタイル（マイナスを赤字に）
+        # スタイル設定
         def color_negative_red(val):
             if isinstance(val, (int, float)) and val < 0:
                 return 'color: red; font-weight: bold;'
             return None
 
-        # データフレーム表示
         st.dataframe(
             display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
             use_container_width=True, height=800, hide_index=True,
