@@ -79,16 +79,20 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             on_select="rerun", selection_mode="single-cell"
         )
 
-        # --- 刷新された内訳表示ロジック ---
+        # --- 徹底ガード版：内訳表示ロジック ---
         if event and len(event.selection.cells) > 0:
-            # 座標の取得 (タプルと辞書の両方に対応)
             cell_info = event.selection.cells[0]
-            r_idx = cell_info.get('row') if isinstance(cell_info, dict) else cell_info[0]
-            c_idx = cell_info.get('column') if isinstance(cell_info, dict) else cell_info[1]
             
-            # 列名から日付を取得
+            # 型が辞書かタプルかに関わらず、確実に整数（int）として抽出
+            raw_r = cell_info.get('row') if isinstance(cell_info, dict) else cell_info[0]
+            raw_c = cell_info.get('column') if isinstance(cell_info, dict) else cell_info[1]
+            
+            # ここが重要：リストや配列で入ってきた場合に最初の1つを整数で取り出す
+            r_idx = int(raw_r[0] if isinstance(raw_r, (list, pd.Index)) else raw_r)
+            c_idx = int(raw_c[0] if isinstance(raw_c, (list, pd.Index)) else raw_c)
+            
+            # 列名と行データを取得
             selected_date = plot_df.columns[c_idx]
-            # 行データから品番・区分を取得
             row_data = plot_df.iloc[r_idx]
 
             # 区分が「要求量」かつ日付列が選ばれている場合のみ処理
@@ -97,13 +101,11 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 target_name = row_data['品名']
                 
                 if target_code:
-                    # calc.pyの参照列に基づき抽出 (2:品番, 1:要求日, 7:製品名, 10:数量)
                     col_hinban = df_req.columns[2]
                     col_date = df_req.columns[1]
                     col_seihin = df_req.columns[7]
                     col_qty = df_req.columns[10]
 
-                    # 日付を文字列 '%y/%m/%d' に揃えてフィルタ
                     detail_df = df_req[df_req[col_hinban] == target_code].copy()
                     detail_df['date_str'] = pd.to_datetime(detail_df[col_date]).dt.strftime('%y/%m/%d')
                     
@@ -119,6 +121,6 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                     st.markdown('</div>', unsafe_allow_html=True)
 
     except Exception as e:
-        st.error(f"解析エラーが発生しました。別のセルを試してください。: {e}")
+        st.error(f"解析エラー: {e}")
 else:
     st.markdown("<br><br><br><p style='text-align: center; color: #d1d1d1;'>データをアップロードしてください</p>", unsafe_allow_html=True)
