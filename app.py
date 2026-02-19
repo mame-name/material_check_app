@@ -88,7 +88,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 product_options = ["全表示"] + sorted(df_req[col_h_name].dropna().unique().tolist())
                 st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
             
-            col_lab2, col_inp2 = st.columns([0.7, 2.5])
+            col_lab2, col_inp2 = st.columns([0.2, 2.5])
             with col_lab2:
                 st.markdown('<p class="custom-label">日付：</p>', unsafe_allow_html=True)
             with col_inp2:
