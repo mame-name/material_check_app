@@ -151,11 +151,24 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                     all_short_idx.extend([idx-2, idx-1, idx])
                 display_df = display_df.loc[sorted(list(set(all_short_idx)))]
 
+        # --- スタイル関数（3行ごとに薄く色付け） ---
+        def style_row_groups(df):
+            # 全体を白で初期化
+            styles = pd.DataFrame('', index=df.index, columns=df.columns)
+            # 3行1セットのうち、偶数番目のセット（インデックス 3-5, 9-11...）に色付け
+            for i in range(len(df)):
+                group_no = i // 3
+                if group_no % 2 == 1:
+                    styles.iloc[i, :] = 'background-color: #f2f7fb' # 非常に薄い青色
+            return styles
+
         # メインテーブル表示
         st.markdown("<h3 style='text-align: center; margin-top: -20px;'>原料在庫シミュレーション</h3>", unsafe_allow_html=True)
         
         event = st.dataframe(
-            display_df.style.applymap(lambda v: 'color:red;font-weight:bold;' if isinstance(v,(int,float)) and v<0 else None).format(precision=3, na_rep="0.000"),
+            display_df.style.apply(style_row_groups, axis=None)
+            .applymap(lambda v: 'color:red;font-weight:bold;' if isinstance(v,(int,float)) and v<0 else None)
+            .format(precision=3, na_rep="0.000"),
             use_container_width=True, height=800, hide_index=True,
             on_select="rerun", selection_mode="single-cell",
             column_config={
@@ -164,7 +177,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             }
         )
 
-        # --- 内訳表示ロジック（正常動作時のコード） ---
+        # --- 内訳表示ロジック ---
         if event and len(event.selection.cells) > 0:
             cell = event.selection.cells[0]
             r_val = cell.get('row') if isinstance(cell, dict) else cell[0]
