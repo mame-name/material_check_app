@@ -6,10 +6,6 @@ from datetime import datetime, timedelta
 # ページ設定
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
-# --- 除外設定リスト ---
-EXCLUDE_PART_NUMBERS = ["1999999"]
-EXCLUDE_KEYWORDS = ["半製品"]
-
 # --- UIデザイン（CSS） ---
 st.markdown("""
     <style>
@@ -19,31 +15,15 @@ st.markdown("""
         border-right: 1px solid #e9ecef;
     }
     header {visibility: hidden;}
-
-    /* プルダウンと日付入力の枠線デザイン（青枠） */
     div[data-baseweb="select"], div[data-baseweb="date-input-container"] {
         border: 2px solid #1f77b4 !important;
         border-radius: 5px !important;
         background-color: white !important;
         margin-bottom: 20px;
     }
-    
-    /* 日付入力欄の中の余白調整 */
-    div[data-baseweb="date-input-container"] input {
-        padding: 8px !important;
-    }
-
-    /* トグルスイッチのラベルを太字にする */
-    [data-testid="stWidgetLabel"] p {
-        font-weight: bold;
-        color: #31333F;
-    }
-
-    /* アップローダーのデザイン */
+    div[data-baseweb="date-input-container"] input { padding: 8px !important; }
+    [data-testid="stWidgetLabel"] p { font-weight: bold; color: #31333F; }
     .stFileUploader { border: 1px solid #e6e9ef; border-radius: 10px; padding: 5px; }
-    [data-testid="stFileUploaderSmallNumber"] { display: none !important; }
-    [data-testid="stFileUploaderDropzoneInstructions"] { display: none !important; }
-    [data-testid="stFileUploader"] section { padding: 0px 10px !important; min-height: 50px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -55,7 +35,6 @@ if 'selected_product' not in st.session_state:
 with st.sidebar:
     st.markdown("### 🔍 絞り込み設定")
     
-    # 製品名リストの作成
     product_options = ["全表示"]
     if st.session_state.get('req'):
         try:
@@ -66,18 +45,15 @@ with st.sidebar:
         except:
             pass
 
-    # 1. 製品名プルダウン（青枠付き）
+    # 1. 製品名プルダウン
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 2. 日付範囲設定（青枠付き）
+    # 2. 表示終了日（デフォルトは今日+14日）
     st.markdown("**表示終了日を指定**")
-    # 初期値：今日 + 14日
-    if 'end_date_val' not in st.session_state:
-        st.session_state.end_date_val = (datetime.now() + timedelta(days=14)).date()
+    default_date = (datetime.now() + timedelta(days=14)).date()
+    end_date = st.date_input("終了日", value=default_date, label_visibility="collapsed")
     
-    end_date = st.date_input("終了日", value=st.session_state.end_date_val, label_visibility="collapsed")
-    
-    # 3. トグルスイッチ（不足のみ表示）
+    # 3. 不足トグル
     show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
 
     st.divider()
@@ -91,104 +67,68 @@ st.markdown("<h3 style='text-align: center; margin-top: -20px;'>原料在庫シ�
 
 if st.session_state.get('req') and st.session_state.get('inv') and st.session_state.get('ord'):
     try:
+        # データ読み込みと計算
         df_req = pd.read_excel(st.session_state.req, header=3)
         df_inv = pd.read_excel(st.session_state.inv, header=4)
         df_ord = pd.read_excel(st.session_state.ord, header=4)
         df_req.columns = df_req.columns.str.strip()
         
-        # 1. 計算実行
-        df_raw_result = create_pivot(df_req, df_inv, df_ord)
+        df_raw = create_pivot(df_req, df_inv, df_ord)
+        if '現在庫' in df_raw.columns:
+            df_raw = df_raw.rename(columns={'現在庫': '前日在庫'})
         
-        # 列名変更
-        if '現在庫' in df_raw_result.columns:
-            df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
-        
-        # 2. 除外設定の適用
-        exclude_mask = (
-            df_raw_result['品番'].isin(EXCLUDE_PART_NUMBERS) | 
-            df_raw_result['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
-        )
-        exclude_start_indices = df_raw_result[exclude_mask].index
-        all_exclude_indices = []
-        for idx in exclude_start_indices:
-            all_exclude_indices.extend([idx, idx+1, idx+2])
-        df_filtered = df_raw_result.drop(index=all_exclude_indices, errors='ignore').reset_index(drop=True)
-
-        # ---------------------------------------------------------
-        # ★ 日付列のフィルタリング（ここで列を厳密に制限）
-        # ---------------------------------------------------------
+        # --- シンプルな列フィルタリングロジック ---
         fixed_cols = ['品番', '品名', '区分', '前日在庫']
-        target_end_date = pd.to_datetime(end_date).date() # 比較用にdate型へ変換
+        # 文字列に変換した終了日（比較用）
+        search_date_str = end_date.strftime('%Y/%m/%d')
         
-        # 日付として解釈できる列のみを判定
-        active_date_cols = []
-        for col in df_filtered.columns:
-            if col not in fixed_cols:
-                try:
-                    col_dt = pd.to_datetime(col).date()
-                    # 指定した終了日以下の列だけをリストに追加
-                    if col_dt <= target_end_date:
-                        active_date_cols.append(col)
-                except:
-                    continue
+        # 全列名から、日付に相当する列だけを抽出
+        all_date_cols = [c for c in df_raw.columns if c not in fixed_cols]
         
-        # 表を「固定列 + 指定日までの日付列」だけで再構成
-        display_df = df_filtered[fixed_cols + active_date_cols].copy()
-        # ---------------------------------------------------------
-
-        # 要求量以外の「前日在庫」を空白にする
-        display_df['前日在庫'] = display_df['前日在庫'].astype(object)
-        display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
-
-        # 3. フィルタ：製品名
+        # カレンダーで選んだ日付「まで」の列を探して、それ以降を捨てる
+        final_date_cols = []
+        for col in all_date_cols:
+            final_date_cols.append(col)
+            # もし列名が選択した日付（またはそれ以降の日付）になったら止める
+            if pd.to_datetime(col).date() >= end_date:
+                break
+        
+        # 必要な列だけで表を再構成
+        display_df = df_raw[fixed_cols + final_date_cols].copy()
+        
+        # --- 以降、表示用の加工 ---
+        # 1. 製品名フィルタ
         if st.session_state.selected_product != "全表示":
             col_h_name = df_req.columns[7]
             col_c_name = df_req.columns[2]
             matched_materials = df_req[df_req[col_h_name] == st.session_state.selected_product][col_c_name].unique().tolist()
-            matched_indices = display_df[display_df['品番'].isin(matched_materials)].index
-            all_indices = []
-            for idx in matched_indices:
-                for offset in [0, 1, 2]:
-                    if idx + offset in display_df.index:
-                        all_indices.append(idx + offset)
-            display_df = display_df.loc[sorted(list(set(all_indices)))]
+            display_df = display_df[display_df['品番'].isin(matched_materials)]
 
-        # 4. フィルタ：不足原料のみ
+        # 2. 不足フィルタ
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
-            if not active_date_cols:
-                display_df = pd.DataFrame(columns=display_df.columns)
-            else:
-                # 絞り込んだ後の列（active_date_cols）の中だけでマイナスがあるか判定
-                shortage_mask = (stock_rows[active_date_cols] < 0).any(axis=1)
-                shortage_indices = stock_rows[shortage_mask].index
-                all_shortage_indices = []
-                for idx in shortage_indices:
-                    for offset in [-2, -1, 0]:
-                        if idx + offset in display_df.index:
-                            all_shortage_indices.append(idx + offset)
-                display_df = display_df.loc[sorted(list(set(all_shortage_indices)))]
+            shortage_indices = stock_rows[(stock_rows[final_date_cols] < 0).any(axis=1)].index
+            # 品番ごとに3行セットで表示するため
+            all_indices = []
+            for idx in shortage_indices:
+                all_indices.extend([idx-2, idx-1, idx])
+            display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # スタイル設定
+        # 3. 前日在庫の空白化
+        display_df['前日在庫'] = display_df['前日在庫'].astype(object)
+        display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
+
+        # 表の描画
         def color_negative_red(val):
-            if isinstance(val, (int, float)) and val < 0:
-                return 'color: red; font-weight: bold;'
-            return None
+            return 'color: red; font-weight: bold;' if isinstance(val, (int, float)) and val < 0 else None
 
-        if not display_df.empty:
-            st.dataframe(
-                display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
-                use_container_width=True, height=800, hide_index=True,
-                column_config={
-                    "品番": st.column_config.TextColumn("品番", pinned=True),
-                    "品名": st.column_config.TextColumn("品名", pinned=True),
-                }
-            )
-        else:
-            st.info("条件に一致するデータがないか、表示終了日までの範囲に日付が存在しません。")
+        st.dataframe(
+            display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
+            use_container_width=True, height=800, hide_index=True,
+            column_config={"品番": st.column_config.TextColumn(pinned=True), "品名": st.column_config.TextColumn(pinned=True)}
+        )
             
     except Exception as e:
         st.error(f"解析エラー: {e}")
 else:
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #d1d1d1; font-size: 1.2rem;'>左側のパネルからデータをアップロードしてください</p>", unsafe_allow_html=True)
+    st.markdown("<br><br><br><p style='text-align: center; color: #d1d1d1;'>データをアップロードしてください</p>", unsafe_allow_html=True)
