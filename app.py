@@ -70,9 +70,9 @@ with st.sidebar:
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
     # 2. 日付範囲設定（青枠付き）
-    st.markdown("**表示終了日を指定（空で全表示）**")
-    # value=None でデフォルトを「なし」に設定
-    end_date = st.date_input("終了日", value=None, label_visibility="collapsed", placeholder="日付を選択してください")
+    # エラー回避のため、デフォルトを今日の日付（datetime.now()）に戻しました
+    st.markdown("**表示終了日を指定**")
+    end_date = st.date_input("終了日", value=datetime.now(), label_visibility="collapsed")
     
     # 3. トグルスイッチ（不足のみ表示）
     show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
@@ -133,27 +133,19 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         # --- 日付列のフィルタリング ---
         fixed_cols = ['品番', '品名', '区分', '前日在庫']
         date_cols = []
+        target_end_datetime = pd.to_datetime(end_date)
         today_datetime = pd.to_datetime(datetime.now().date())
 
-        if end_date is not None:
-            # 日付が選択されている場合のみフィルタリング
-            target_end_datetime = pd.to_datetime(end_date)
-            for col in display_df.columns:
-                try:
-                    col_dt = pd.to_datetime(col)
-                    if today_datetime <= col_dt <= target_end_datetime:
-                        date_cols.append(col)
-                except (ValueError, TypeError):
-                    continue
-        else:
-            # 日付が未選択の場合は、すべての日付列を表示
-            for col in display_df.columns:
-                try:
-                    pd.to_datetime(col)
+        for col in display_df.columns:
+            try:
+                col_dt = pd.to_datetime(col)
+                # 今日以降、かつ指定された終了日までの列を採用
+                if today_datetime <= col_dt <= target_end_datetime:
                     date_cols.append(col)
-                except (ValueError, TypeError):
-                    continue
+            except (ValueError, TypeError):
+                continue
         
+        # 表示対象の列を確定
         display_df = display_df[fixed_cols + date_cols]
 
         # 4. フィルタ：不足原料のみ
@@ -187,7 +179,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 }
             )
         else:
-            st.info("条件に一致するデータがありません。")
+            st.info("条件に一致するデータがないか、表示範囲内に日付がありません。終了日を先に伸ばしてください。")
             
     except Exception as e:
         st.error(f"解析エラー: {e}")
