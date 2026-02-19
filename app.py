@@ -20,19 +20,23 @@ st.markdown("""
     }
     header {visibility: hidden;}
 
-    /* 青枠デザイン */
-    div[data-baseweb="select"], div[data-baseweb="date-input-container"] {
+    /* プルダウン、日付入力、テキスト入力の枠線デザイン（青枠） */
+    div[data-baseweb="select"], 
+    div[data-baseweb="date-input-container"],
+    div[data-testid="stDateInput"] > div {
         border: 2px solid #1f77b4 !important;
         border-radius: 5px !important;
         background-color: white !important;
         margin-bottom: 20px;
     }
 
+    /* トグルスイッチのラベルを太字にする */
     [data-testid="stWidgetLabel"] p {
         font-weight: bold;
         color: #31333F;
     }
 
+    /* アップローダーのデザイン */
     .stFileUploader { border: 1px solid #e6e9ef; border-radius: 10px; padding: 5px; }
     [data-testid="stFileUploaderSmallNumber"] { display: none !important; }
     [data-testid="stFileUploaderDropzoneInstructions"] { display: none !important; }
@@ -48,7 +52,7 @@ if 'selected_product' not in st.session_state:
 with st.sidebar:
     st.markdown("### 🔍 絞り込み設定")
     
-    # 1. 製品名
+    # 1. 製品名リストの作成
     product_options = ["全表示"]
     if st.session_state.get('req'):
         try:
@@ -56,17 +60,18 @@ with st.sidebar:
             df_req_raw.columns = df_req_raw.columns.str.strip()
             col_h_name = df_req_raw.columns[7]
             product_options += sorted(df_req_raw[col_h_name].dropna().unique().tolist())
-        except: pass
+        except:
+            pass
+
+    # 製品名選択
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 2. 日付範囲設定
+    # 2. 表示終了日指定（青枠適用）
     st.markdown("**表示終了日を指定**")
     default_end = (datetime.now() + timedelta(days=14)).date()
-    # カレンダーで日付を受け取る
     end_date = st.date_input("終了日", value=default_end, label_visibility="collapsed")
     
-    # 【重要】カレンダーの日付を、calc.pyと同じ「年2桁文字列」に変換
-    # 例: 2026-02-19 -> "26/02/19"
+    # calc.pyの形式（年2桁文字列）に合わせて変換
     end_date_str = end_date.strftime('%y/%m/%d')
 
     # 3. トグルスイッチ
@@ -92,20 +97,16 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         df_raw_result = create_pivot(df_req, df_inv, df_ord)
         
         if df_raw_result.empty:
-            st.warning("計算結果が空です。データの期間等を確認してください。")
+            st.warning("計算結果が空です。")
             st.stop()
 
         if '現在庫' in df_raw_result.columns:
             df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
         
-        # --- 【核心】列の絞り込み ---
+        # --- 列の絞り込み ---
         fixed_cols = ['品番', '品名', '区分', '前日在庫']
-        
-        # calc.pyが生成する日付ラベル形式（%y/%m/%d）で比較する
-        # 文字列の比較（"26/02/19" <= "26/03/01"）は、この形式なら正しく機能します
         target_date_cols = [c for c in df_raw_result.columns if c not in fixed_cols and c <= end_date_str]
         
-        # 物理的に列を抽出
         df_limited = df_raw_result[fixed_cols + target_date_cols].copy()
 
         # 2. 除外フィルタ
@@ -119,6 +120,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             all_exclude.extend([idx, idx+1, idx+2])
         df_filtered = df_limited.drop(index=all_exclude, errors='ignore').reset_index(drop=True)
         
+        # 表示用の加工
         display_df = df_filtered.copy()
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
@@ -144,7 +146,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                     all_short_idx.extend([idx-2, idx-1, idx])
                 display_df = display_df.loc[sorted(list(set(all_short_idx)))]
 
-        # マイナス値を赤字にする
+        # スタイル設定
         def color_negative_red(val):
             if isinstance(val, (int, float)) and val < 0:
                 return 'color: red; font-weight: bold;'
