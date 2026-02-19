@@ -100,7 +100,7 @@ if all(st.session_state.get(k) for k in ['req', 'inv', 'ord', 'ord_sched']):
             
             col_spacer, col_toggle = st.columns([0.07, 2.5])
             with col_toggle:
-                show_shortage_only = st.toggle(" 🚨 不足品のみ表示", value=False)
+                show_shortage_only = st.toggle(" 🚨不足する原料のみ表示", value=False)
 
             # --- サイドバー内訳エリア ---
             st.markdown("---")
