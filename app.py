@@ -3,7 +3,7 @@ import pandas as pd
 from calc import create_pivot
 from datetime import datetime, timedelta
 
-# --- ページ設定 & デザイン ---
+# --- 1. ページ設定 & デザイン ---
 st.set_page_config(layout="wide", page_title="生産管理システム")
 st.markdown("""
     <style>
@@ -22,7 +22,7 @@ st.markdown("""
 if 'selected_product' not in st.session_state:
     st.session_state.selected_product = "全表示"
 
-# --- サイドバー ---
+# --- 2. サイドバー ---
 with st.sidebar:
     st.markdown("### 🔍 絞り込み設定")
     product_options = ["全表示"]
@@ -43,7 +43,7 @@ with st.sidebar:
     st.file_uploader("2. 発注リスト", type=['xlsx', 'xls'], key="ord")
     st.file_uploader("3. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
 
-# --- メインエリア ---
+# --- 3. メインエリア ---
 st.markdown("<h3 style='text-align: center; margin-top: -20px;'>原料在庫シミュレーション</h3>", unsafe_allow_html=True)
 
 if st.session_state.get('req') and st.session_state.get('inv') and st.session_state.get('ord'):
@@ -72,36 +72,26 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
 
         st.info("💡 「要求量」の行の数字（セル）をクリックすると、その日の内訳を表示します")
         
-        # --- セル選択の設定 ---
         event = st.dataframe(
             plot_df.style.applymap(lambda v: 'color:red;font-weight:bold;' if isinstance(v,(int,float)) and v<0 else None).format(precision=3),
             use_container_width=True, height=500, hide_index=True,
             on_select="rerun", selection_mode="single-cell"
         )
 
-        # --- 最終解：列名ダイレクト取得ロジック ---
+        # --- 4. 内訳表示ロジック（エラーガード版） ---
         if event and len(event.selection.cells) > 0:
             cell_info = event.selection.cells[0]
             
-            # 1. 行の特定（辞書でもタプルでも対応）
+            # 行と列の特定
             r_val = cell_info.get('row') if isinstance(cell_info, dict) else cell_info[0]
             r_idx = int(r_val[0] if isinstance(r_val, list) else r_val)
-            
-            # 2. 列の特定（ここが修正のキモ）
-            # columnに直接 '26/02/20' のような文字列が入ってくるケースに対応
             c_val = cell_info.get('column') if isinstance(cell_info, dict) else cell_info[1]
-            if isinstance(c_val, str):
-                selected_date = c_val  # 文字列ならそのまま日付として使う
-            else:
-                c_idx = int(c_val[0] if isinstance(c_val, list) else c_val)
-                selected_date = plot_df.columns[c_idx]
+            selected_date = c_val if isinstance(c_val, str) else plot_df.columns[int(c_val[0] if isinstance(c_val, list) else c_val)]
 
-            # 3. データの取得
             row_data = plot_df.iloc[r_idx]
 
             if row_data['区分'] == '要求量 (ー)' and selected_date not in fixed_cols:
                 target_code = row_data['品番']
-                target_name = row_data['品名']
                 
                 if target_code:
                     col_hinban = df_req.columns[2]
@@ -109,16 +99,21 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                     col_seihin = df_req.columns[7]
                     col_qty = df_req.columns[10]
 
+                    # 【重要】エラー回避: 日付として解釈できない値（八千代工場など）を無視して変換
                     detail_df = df_req[df_req[col_hinban] == target_code].copy()
-                    detail_df['date_str'] = pd.to_datetime(detail_df[col_date]).dt.strftime('%y/%m/%d')
                     
+                    # errors='coerce' を指定することで、文字を無理に日付にせず「NaT(空)」にする
+                    temp_dates = pd.to_datetime(detail_df[col_date], errors='coerce')
+                    detail_df['date_str'] = temp_dates.dt.strftime('%y/%m/%d')
+                    
+                    # NaTを排除してから比較
                     final_res = detail_df[detail_df['date_str'] == selected_date][[col_date, col_seihin, col_qty]]
                     final_res.columns = ['要求日', '使用製品', '数量']
 
                     st.markdown(f'<div class="detail-area">', unsafe_allow_html=True)
-                    st.markdown(f'#### 📋 {selected_date} の内訳 : {target_name} ({target_code})')
+                    st.markdown(f'#### 📋 {selected_date} の内訳 : {row_data["品名"]} ({target_code})')
                     if not final_res.empty:
-                        st.table(final_res)
+                        st.table(final_res.dropna())
                     else:
                         st.write("この日の個別要求はありません。")
                     st.markdown('</div>', unsafe_allow_html=True)
