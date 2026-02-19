@@ -29,12 +29,14 @@ st.markdown("""
         background-color: white !important;
     }
 
-    /* 横並び用カスタムラベル */
+    /* 横並び用カスタムラベル（右寄せにして間隔を詰める） */
     .custom-label {
         font-size: 0.9rem;
         font-weight: bold;
         margin-top: 8px;
         white-space: nowrap;
+        text-align: right;  /* 右寄せ追加 */
+        width: 100%;       /* 幅いっぱい使って右に寄せる */
     }
 
     /* サイドバー内訳パネル */
@@ -77,8 +79,8 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         with st.sidebar:
             st.markdown("### 🔍 絞り込み設定")
             
-            # 品名：プルダウン（横並び）
-            col_lab1, col_inp1 = st.columns([1, 2.5])
+            # 【比率を [0.7, 2.5] にして間隔を狭め、ラベルを右寄せ】
+            col_lab1, col_inp1 = st.columns([0.7, 2.5])
             with col_lab1:
                 st.markdown('<p class="custom-label">品名：</p>', unsafe_allow_html=True)
             with col_inp1:
@@ -86,8 +88,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 product_options = ["全表示"] + sorted(df_req[col_h_name].dropna().unique().tolist())
                 st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
             
-            # 日付：入力欄（横並び）
-            col_lab2, col_inp2 = st.columns([1, 2.5])
+            col_lab2, col_inp2 = st.columns([0.7, 2.5])
             with col_lab2:
                 st.markdown('<p class="custom-label">日付：</p>', unsafe_allow_html=True)
             with col_inp2:
@@ -112,7 +113,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         target_date_cols = [c for c in df_raw_result.columns if c not in fixed_cols and c <= end_date_str]
         df_limited = df_raw_result[fixed_cols + target_date_cols].copy()
 
-        # 2. 除外フィルタ（完成形をそのまま維持：1999999や半製品の除外）
+        # 2. 除外フィルタ（完成形をそのまま維持）
         exclude_mask = (
             df_limited['品番'].isin(EXCLUDE_PART_NUMBERS) | 
             df_limited['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
@@ -127,7 +128,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
-        # 3. 製品名フィルタ（完成形準拠）
+        # 3. 製品名フィルタ
         if st.session_state.selected_product != "全表示":
             col_c_name = df_req.columns[2]
             matched_materials = df_req[df_req[df_req.columns[7]] == st.session_state.selected_product][col_c_name].unique().tolist()
@@ -137,7 +138,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 all_indices.extend([idx, idx+1, idx+2])
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # 4. 不足原料フィルタ（完成形準拠）
+        # 4. 不足原料フィルタ
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             if target_date_cols:
@@ -161,10 +162,9 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             }
         )
 
-        # --- 内訳表示ロジック（うまくいっていた時の記述をそのまま復元） ---
+        # --- 内訳表示ロジック（正常動作時のコード） ---
         if event and len(event.selection.cells) > 0:
             cell = event.selection.cells[0]
-            # 座標取得の仕方を以前の正常動作時のものに戻しました
             r_val = cell.get('row') if isinstance(cell, dict) else cell[0]
             c_val = cell.get('column') if isinstance(cell, dict) else cell[1]
             r_idx = int(r_val[0] if isinstance(r_val, list) else r_val)
