@@ -169,7 +169,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             display_df.style.apply(style_row_groups, axis=None)
             .applymap(lambda v: 'color:red;font-weight:bold;' if isinstance(v,(int,float)) and v<0 else None)
             .format(precision=3, na_rep="0.000"),
-            use_container_width=True, height=800, hide_index=True,
+            use_container_width=True, height=600, hide_index=True,
             on_select="rerun", selection_mode="single-cell",
             column_config={
                 "品番": st.column_config.TextColumn("品番", pinned=True),
