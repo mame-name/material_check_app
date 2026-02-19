@@ -18,18 +18,17 @@ st.markdown("""
         background-color: white !important;
         margin-bottom: 20px;
     }
-    /* 詳細エリアのデザイン */
     .detail-area {
         background-color: #f0f8ff;
-        border: 1px solid #1f77b4;
+        border: 2px solid #1f77b4;
         border-radius: 10px;
         padding: 15px;
-        margin-top: 10px;
+        margin-top: 15px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# セッション状態の初期化
+# セッション状態
 if 'selected_product' not in st.session_state:
     st.session_state.selected_product = "全表示"
 
@@ -72,54 +71,60 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         target_date_cols = [c for c in df_raw_result.columns if c not in fixed_cols and c <= end_date_str]
         display_df = df_raw_result[fixed_cols + target_date_cols].copy()
 
-        # フィルタ処理（製品名・不足）
+        # フィルタ処理
         if st.session_state.selected_product != "全表示":
             matched_materials = df_req[df_req[df_req.columns[7]] == st.session_state.selected_product][df_req.columns[2]].unique().tolist()
             display_df = display_df[display_df['品番'].isin(matched_materials) | (display_df['品番'] == "")]
 
-        # 表示用加工
         plot_df = display_df.copy().reset_index(drop=True)
         plot_df['前日在庫'] = plot_df['前日在庫'].astype(object)
         plot_df.loc[plot_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
-        # 表の表示
-        st.info("💡 数字のマスをクリックすると、その日の内訳が表示されます")
+        st.info("💡 数字のマスをクリックすると、その日の内訳が下に表示されます")
+        
+        # --- セル選択イベント ---
         event = st.dataframe(
             plot_df.style.applymap(lambda v: 'color:red;font-weight:bold;' if isinstance(v,(int,float)) and v<0 else None).format(precision=3),
             use_container_width=True, height=500, hide_index=True,
             on_select="rerun", selection_mode="single-cell"
         )
 
-        # --- 内訳表示ロジック ---
+        # --- エラー回避版：内訳表示ロジック ---
         if event and len(event.selection.cells) > 0:
-            cell = event.selection.cells[0]
-            r_idx, c_idx = cell['row'], cell['column']
+            # 修正ポイント: タプルから数値を取り出す
+            selected_cell = event.selection.cells[0]
+            r_idx = selected_cell[0] # row
+            c_idx = selected_cell[1] # column
+            
             selected_date = plot_df.columns[c_idx]
             
             if selected_date not in fixed_cols:
-                # 品番特定 (エラー回避のため current_idx >= 0 を保証)
+                # 品番を上に遡って特定
                 current_idx = r_idx
+                target_code = None
                 while current_idx >= 0:
                     code = plot_df.iloc[current_idx]['品番']
-                    if code and str(code).strip():
+                    if pd.notna(code) and str(code).strip() != "":
                         target_code = code
                         target_name = plot_df.iloc[current_idx]['品名']
                         break
                     current_idx -= 1
                 
-                # 詳細データの抽出
-                detail = df_req[df_req[df_req.columns[2]] == target_code].copy()
-                detail['要求日_fmt'] = pd.to_datetime(detail[df_req.columns[1]]).dt.strftime('%y/%m/%d')
-                
-                res = detail[detail['要求日_fmt'] == selected_date][[df_req.columns[1], df_req.columns[7], df_req.columns[10]]]
-                res.columns = ['要求日', '使用製品', '要求量']
+                if target_code:
+                    # 詳細抽出
+                    detail = df_req[df_req[df_req.columns[2]] == target_code].copy()
+                    detail['要求日_fmt'] = pd.to_datetime(detail[df_req.columns[1]]).dt.strftime('%y/%m/%d')
+                    
+                    res = detail[detail['要求日_fmt'] == selected_date][[df_req.columns[1], df_req.columns[7], df_req.columns[10]]]
+                    res.columns = ['要求日', '使用製品', '要求量']
 
-                st.markdown(f'<div class="detail-area"><h4>📋 {selected_date} の内訳: {target_name}</h4>', unsafe_allow_html=True)
-                if not res.empty:
-                    st.table(res)
-                else:
-                    st.write("この日の個別要求データはありません。")
-                st.markdown('</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="detail-area">', unsafe_allow_html=True)
+                    st.markdown(f'#### 📋 {selected_date} の内訳: {target_name}')
+                    if not res.empty:
+                        st.table(res)
+                    else:
+                        st.write("この日の個別要求データはありません。")
+                    st.markdown('</div>', unsafe_allow_html=True)
 
     except Exception as e:
         st.error(f"解析エラー: {e}")
