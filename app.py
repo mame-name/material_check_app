@@ -3,9 +3,14 @@ import pandas as pd
 from calc import create_pivot
 from datetime import datetime, timedelta
 
-# --- 1. ページ設定 & UIデザイン（完全維持） ---
+# --- ページ設定（完成形準拠） ---
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
+# --- 除外設定リスト（完成形をそのまま維持） ---
+EXCLUDE_PART_NUMBERS = [1999999]
+EXCLUDE_KEYWORDS = ["半製品"]
+
+# --- UIデザイン（完成形デザイン ＋ 横並びラベル・内訳パネル用CSS） ---
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -14,59 +19,85 @@ st.markdown("""
         border-right: 1px solid #e9ecef;
     }
     header {visibility: hidden;}
-    
+
+    /* 青枠デザイン（完成形準拠） */
     div[data-baseweb="select"], 
     div[data-baseweb="date-input-container"],
     div[data-testid="stDateInput"] > div {
         border: 2px solid #1f77b4 !important;
         border-radius: 5px !important;
         background-color: white !important;
-        margin-bottom: 20px;
     }
-    
-    /* サイドバー内の内訳：シンプル・ミニマルデザイン */
+
+    /* 横並び用カスタムラベル */
+    .custom-label {
+        font-size: 0.9rem;
+        font-weight: bold;
+        margin-top: 8px;
+        white-space: nowrap;
+    }
+
+    /* サイドバー内訳パネル */
     .sidebar-detail-box {
         border-left: 4px solid #1f77b4;
         padding: 0px 10px;
         margin: 10px 0px 20px 0px;
     }
     .detail-title { font-size: 0.85rem; font-weight: bold; color: #1f77b4; margin-bottom: 5px; }
+
+    /* トグルスイッチのラベル太字 */
+    [data-testid="stWidgetLabel"] p { font-weight: bold; color: #31333F; }
+
+    /* アップローダーのデザイン（完成形準拠） */
+    .stFileUploader { border: 1px solid #e6e9ef; border-radius: 10px; padding: 5px; }
+    [data-testid="stFileUploaderSmallNumber"] { display: none !important; }
+    [data-testid="stFileUploaderDropzoneInstructions"] { display: none !important; }
+    [data-testid="stFileUploader"] section { padding: 0px 10px !important; min-height: 50px !important; }
     </style>
     """, unsafe_allow_html=True)
 
 if 'selected_product' not in st.session_state:
     st.session_state.selected_product = "全表示"
 
-# --- 2. データ処理とサイドバー配置の統合 ---
+# --- メイン処理 ---
 if st.session_state.get('req') and st.session_state.get('inv') and st.session_state.get('ord'):
     try:
-        # データの読み込み
+        # Excel読み込み
         df_req = pd.read_excel(st.session_state.req, header=3)
         df_inv = pd.read_excel(st.session_state.inv, header=4)
         df_ord = pd.read_excel(st.session_state.ord, header=4)
         df_req.columns = df_req.columns.str.strip()
         
-        # 計算実行（calc.py）
+        # 1. 計算実行（完成形準拠）
         df_raw_result = create_pivot(df_req, df_inv, df_ord)
         if '現在庫' in df_raw_result.columns:
             df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
-        
-        # --- サイドバー表示（ここから） ---
+
+        # --- サイドバー操作パネル ---
         with st.sidebar:
             st.markdown("### 🔍 絞り込み設定")
             
-            # 製品名選択リストの作成
-            product_options = ["全表示"] + sorted(df_req.iloc[:, 7].dropna().unique().tolist())
-            st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
+            # 【新UI】品名：プルダウン（横並び）
+            col_lab1, col_inp1 = st.columns([1, 2.5])
+            with col_lab1:
+                st.markdown('<p class="custom-label">品名：</p>', unsafe_allow_html=True)
+            with col_inp1:
+                col_h_name = df_req.columns[7]
+                product_options = ["全表示"] + sorted(df_req[col_h_name].dropna().unique().tolist())
+                st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
             
-            # 終了日指定
-            end_date = st.date_input("終了日", value=(datetime.now() + timedelta(days=14)).date(), label_visibility="collapsed")
-            end_date_str = end_date.strftime('%y/%m/%d')
+            # 【新UI】日付：入力欄（横並び）
+            col_lab2, col_inp2 = st.columns([1, 2.5])
+            with col_lab2:
+                st.markdown('<p class="custom-label">日付：</p>', unsafe_allow_html=True)
+            with col_inp2:
+                default_end = (datetime.now() + timedelta(days=14)).date()
+                end_date = st.date_input("終了日", value=default_end, label_visibility="collapsed")
+                end_date_str = end_date.strftime('%y/%m/%d')
             
-            # 不足フィルタトグル
             show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
 
-            # 内訳表示用プレースホルダー（トグルと読込の間）
+            # --- サイドバー内訳エリア ---
             st.markdown("---")
             detail_placeholder = st.empty() 
             st.markdown("---")
@@ -75,19 +106,38 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
             st.file_uploader("2. 発注リスト", type=['xlsx', 'xls'], key="ord")
             st.file_uploader("3. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
-        # --- サイドバー表示（ここまで） ---
 
-        # --- 3. メイン画面のフィルタロジック ---
+        # --- フィルタロジック（完成形をそのまま維持） ---
         fixed_cols = ['品番', '品名', '区分', '前日在庫']
         target_date_cols = [c for c in df_raw_result.columns if c not in fixed_cols and c <= end_date_str]
-        display_df = df_raw_result[fixed_cols + target_date_cols].copy()
+        df_limited = df_raw_result[fixed_cols + target_date_cols].copy()
 
-        # 製品フィルタ
+        # 2. 除外フィルタ（完成形をそのまま維持：1999999や半製品の除外）
+        exclude_mask = (
+            df_limited['品番'].isin(EXCLUDE_PART_NUMBERS) | 
+            df_limited['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
+        )
+        exclude_indices = df_limited[exclude_mask].index
+        all_exclude = []
+        for idx in exclude_indices:
+            all_exclude.extend([idx, idx+1, idx+2])
+        df_filtered = df_limited.drop(index=all_exclude, errors='ignore').reset_index(drop=True)
+        
+        display_df = df_filtered.copy()
+        display_df['前日在庫'] = display_df['前日在庫'].astype(object)
+        display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
+
+        # 3. 製品名フィルタ（完成形準拠）
         if st.session_state.selected_product != "全表示":
-            matched_materials = df_req[df_req.iloc[:, 7] == st.session_state.selected_product].iloc[:, 2].unique().tolist()
-            display_df = display_df[display_df['品番'].isin(matched_materials) | (display_df['品番'] == "")]
+            col_c_name = df_req.columns[2]
+            matched_materials = df_req[df_req[df_req.columns[7]] == st.session_state.selected_product][col_c_name].unique().tolist()
+            matched_indices = display_df[display_df['品番'].isin(matched_materials)].index
+            all_indices = []
+            for idx in matched_indices:
+                all_indices.extend([idx, idx+1, idx+2])
+            display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # 不足フィルタ
+        # 4. 不足原料フィルタ（完成形準拠）
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
             if target_date_cols:
@@ -96,50 +146,38 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 all_short_idx = []
                 for idx in shortage_indices:
                     all_short_idx.extend([idx-2, idx-1, idx])
-                display_df = display_df.loc[display_df.index.intersection(all_short_idx)]
-
-        # 表示用整形
-        plot_df = display_df.copy().reset_index(drop=True)
-        plot_df['前日在庫'] = plot_df['前日在庫'].astype(object)
-        plot_df.loc[plot_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
+                display_df = display_df.loc[sorted(list(set(all_short_idx)))]
 
         # メインテーブル表示
         st.markdown("<h3 style='text-align: center; margin-top: -20px;'>原料在庫シミュレーション</h3>", unsafe_allow_html=True)
-        st.info("💡 「要求量」の数字をクリックすると、左側に内訳が表示されます")
         
         event = st.dataframe(
-            plot_df.style.applymap(lambda v: 'color:red;font-weight:bold;' if isinstance(v,(int,float)) and v<0 else None).format(precision=3),
-            use_container_width=True, height=600, hide_index=True,
-            on_select="rerun", selection_mode="single-cell"
+            display_df.style.applymap(lambda v: 'color:red;font-weight:bold;' if isinstance(v,(int,float)) and v<0 else None).format(precision=3, na_rep="0.000"),
+            use_container_width=True, height=800, hide_index=True,
+            on_select="rerun", selection_mode="single-cell",
+            column_config={
+                "品番": st.column_config.TextColumn("品番", pinned=True),
+                "品名": st.column_config.TextColumn("品名", pinned=True),
+            }
         )
 
-        # --- 4. 内訳検索ロジック（シンプル表示 + 原料名表示） ---
+        # --- サイドバー内訳表示（要求量クリック時） ---
         if event and len(event.selection.cells) > 0:
             cell = event.selection.cells[0]
-            # 座標取得
-            r_val = cell.get('row') if isinstance(cell, dict) else cell[0]
-            c_val = cell.get('column') if isinstance(cell, dict) else cell[1]
-            r_idx = int(r_val[0] if isinstance(r_val, list) else r_val)
-            
-            if isinstance(c_val, str): 
-                sel_date = c_val
-            else: 
-                sel_date = plot_df.columns[int(c_val[0] if isinstance(c_val, list) else c_val)]
+            r_idx = cell.get('row')
+            c_val = cell.get('column')
+            sel_date = c_val if isinstance(c_val, str) else display_df.columns[int(c_val)]
+            row_data = display_df.iloc[r_idx]
 
-            row_data = plot_df.iloc[r_idx]
-
-            # 要求量行のみ反応
             if row_data['区分'] == '要求量 (ー)' and sel_date not in fixed_cols:
                 target_code = str(row_data['品番']).strip()
-                target_name = row_data['品名'] # 原料名を取得
+                target_name = row_data['品名']
                 
-                # 所要量一覧から検索 (2:品番, 5:要求日, 7:製品名, 11:数量)
                 d_hinban = df_req.iloc[:, 2].astype(str).str.strip()
                 detail_df = df_req[d_hinban == target_code].copy()
                 detail_df['date_match'] = pd.to_datetime(detail_df.iloc[:, 5], errors='coerce').dt.strftime('%y/%m/%d')
                 res = detail_df[detail_df['date_match'] == sel_date].copy()
 
-                # サイドバーに流し込み（日付と原料名を横並びに）
                 with detail_placeholder.container():
                     st.markdown(f'<div class="sidebar-detail-box"><div class="detail-title">📍 {sel_date} {target_name}</div></div>', unsafe_allow_html=True)
                     if not res.empty:
@@ -151,14 +189,12 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         st.caption("明細なし")
 
     except Exception as e:
-        st.error(f"解析エラーが発生しました: {e}")
-
+        st.error(f"解析エラー: {e}")
 else:
-    # 未アップロード時
     with st.sidebar:
         st.markdown("### 📁 データ読込")
         st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
         st.file_uploader("2. 発注リスト", type=['xlsx', 'xls'], key="ord")
         st.file_uploader("3. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
-    st.markdown("<br><br><br><p style='text-align: center; color: #d1d1d1;'>データをアップロードしてください</p>", unsafe_allow_html=True)
+    st.markdown("<br><br><br><p style='text-align: center; color: #d1d1d1; font-size: 1.2rem;'>左側のパネルからデータをアップロードしてください</p>", unsafe_allow_html=True)
     
