@@ -96,7 +96,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 end_date = st.date_input("終了日", value=default_end, label_visibility="collapsed")
                 end_date_str = end_date.strftime('%y/%m/%d')
             
-            show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
+            show_shortage_only = st.toggle("　　🚨 不足原料のみを表示", value=False)
 
             # --- サイドバー内訳エリア ---
             st.markdown("---")
