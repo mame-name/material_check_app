@@ -6,7 +6,7 @@ from calc import create_pivot
 st.set_page_config(layout="wide", page_title="生産管理システム")
 
 # --- 除外設定リスト ---
-EXCLUDE_PART_NUMBERS = ["1999999"]
+EXCLUDE_PART_NUMBERS = [1999999]
 EXCLUDE_KEYWORDS = ["半製品"]
 
 # --- UIデザイン（CSS） ---
