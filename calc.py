@@ -2,9 +2,9 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-def create_pivot(df_req, df_inv, df_ord):
+def create_pivot(df_req, df_inv, df_ord, df_ord_sched):
     # 1. 前処理
-    for df in [df_req, df_inv, df_ord]:
+    for df in [df_req, df_inv, df_ord, df_ord_sched]:
         df.columns = df.columns.str.strip()
     
     today = pd.Timestamp(datetime.now().date())
@@ -20,11 +20,21 @@ def create_pivot(df_req, df_inv, df_ord):
     df_req = df_req.dropna(subset=['要求日'])
     df_req_today_on = df_req[df_req['要求日'] >= today].copy()
 
-    # 4. 発注リストの集計 (今日以降)
+    # 4. 発注リスト ＋ 発注予定の統合集計
+    # 発注リスト(確定)
     df_ord['発注数量'] = pd.to_numeric(df_ord['発注数量'], errors='coerce').fillna(0.0)
     df_ord['納期'] = pd.to_datetime(df_ord['納期'], format='%y/%m/%d', errors='coerce')
-    df_ord = df_ord.dropna(subset=['納期'])
-    df_ord_today_on = df_ord[df_ord['納期'] >= today].copy()
+    df_ord_clean = df_ord[['品番', '納期', '発注数量']].rename(columns={'発注数量': '数量'})
+
+    # 発注予定一覧
+    df_ord_sched['数量'] = pd.to_numeric(df_ord_sched['数量'], errors='coerce').fillna(0.0)
+    df_ord_sched['納期'] = pd.to_datetime(df_ord_sched['納期'], format='%y/%m/%d', errors='coerce')
+    df_sched_clean = df_ord_sched[['品番', '納期', '数量']]
+
+    # 統合
+    df_combined_ord = pd.concat([df_ord_clean, df_sched_clean], ignore_index=True)
+    df_combined_ord = df_combined_ord.dropna(subset=['納期'])
+    df_ord_today_on = df_combined_ord[df_combined_ord['納期'] >= today].copy()
 
     # 5. 横軸（カレンダー）作成
     combined_dates = pd.concat([df_req_today_on['要求日'], df_ord_today_on['納期']])
@@ -33,7 +43,7 @@ def create_pivot(df_req, df_inv, df_ord):
         all_dates = pd.date_range(start=today, end=max_date if max_date >= today else today, freq='D')
         
         pivot_req_raw = df_req_today_on.pivot_table(index=['品番', '品名'], columns='要求日', values='基準単位数量', aggfunc='sum').fillna(0.0)
-        pivot_ord_raw = df_ord_today_on.pivot_table(index='品番', columns='納期', values='発注数量', aggfunc='sum').fillna(0.0)
+        pivot_ord_raw = df_ord_today_on.pivot_table(index='品番', columns='納期', values='数量', aggfunc='sum').fillna(0.0)
         
         pivot_req = pivot_req_raw.reindex(columns=all_dates, fill_value=0.0).fillna(0.0)
         pivot_ord = pivot_ord_raw.reindex(columns=all_dates, fill_value=0.0).fillna(0.0)
