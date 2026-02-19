@@ -71,9 +71,11 @@ with st.sidebar:
 
     # 2. 日付範囲設定（青枠付き）
     st.markdown("**表示終了日を指定**")
-    # デフォルトは今日 + 2週間
-    default_end_date = datetime.now() + timedelta(days=14)
-    end_date = st.date_input("終了日", value=default_end_date, label_visibility="collapsed")
+    # 初期値：今日 + 14日
+    if 'end_date_val' not in st.session_state:
+        st.session_state.end_date_val = (datetime.now() + timedelta(days=14)).date()
+    
+    end_date = st.date_input("終了日", value=st.session_state.end_date_val, label_visibility="collapsed")
     
     # 3. トグルスイッチ（不足のみ表示）
     show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
@@ -97,11 +99,11 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         # 1. 計算実行
         df_raw_result = create_pivot(df_req, df_inv, df_ord)
         
-        # 列名変更：現在庫 → 前日在庫
+        # 列名変更
         if '現在庫' in df_raw_result.columns:
             df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
         
-        # 2. 除外フィルタ
+        # 2. 除外設定の適用
         exclude_mask = (
             df_raw_result['品番'].isin(EXCLUDE_PART_NUMBERS) | 
             df_raw_result['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
@@ -110,11 +112,31 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         all_exclude_indices = []
         for idx in exclude_start_indices:
             all_exclude_indices.extend([idx, idx+1, idx+2])
-        
         df_filtered = df_raw_result.drop(index=all_exclude_indices, errors='ignore').reset_index(drop=True)
+
+        # ---------------------------------------------------------
+        # ★ 日付列のフィルタリング（ここで列を厳密に制限）
+        # ---------------------------------------------------------
+        fixed_cols = ['品番', '品名', '区分', '前日在庫']
+        target_end_date = pd.to_datetime(end_date).date() # 比較用にdate型へ変換
         
-        # --- 表示用の加工（空白化処理） ---
-        display_df = df_filtered.copy()
+        # 日付として解釈できる列のみを判定
+        active_date_cols = []
+        for col in df_filtered.columns:
+            if col not in fixed_cols:
+                try:
+                    col_dt = pd.to_datetime(col).date()
+                    # 指定した終了日以下の列だけをリストに追加
+                    if col_dt <= target_end_date:
+                        active_date_cols.append(col)
+                except:
+                    continue
+        
+        # 表を「固定列 + 指定日までの日付列」だけで再構成
+        display_df = df_filtered[fixed_cols + active_date_cols].copy()
+        # ---------------------------------------------------------
+
+        # 要求量以外の「前日在庫」を空白にする
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
@@ -131,30 +153,14 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                         all_indices.append(idx + offset)
             display_df = display_df.loc[sorted(list(set(all_indices)))]
 
-        # --- 日付列のフィルタリング（修正：データの先頭から終了日までを表示） ---
-        fixed_cols = ['品番', '品名', '区分', '前日在庫']
-        date_cols = []
-        target_end_datetime = pd.to_datetime(end_date)
-
-        for col in df_filtered.columns:
-            try:
-                col_dt = pd.to_datetime(col)
-                # 指定された終了日以前の列をすべて採用（「今日以降」の制限を解除）
-                if col_dt <= target_end_datetime:
-                    date_cols.append(col)
-            except (ValueError, TypeError):
-                continue
-        
-        # 指定列を抽出
-        display_df = display_df[fixed_cols + date_cols]
-
         # 4. フィルタ：不足原料のみ
         if show_shortage_only:
             stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
-            if not date_cols:
+            if not active_date_cols:
                 display_df = pd.DataFrame(columns=display_df.columns)
             else:
-                shortage_mask = (stock_rows[date_cols] < 0).any(axis=1)
+                # 絞り込んだ後の列（active_date_cols）の中だけでマイナスがあるか判定
+                shortage_mask = (stock_rows[active_date_cols] < 0).any(axis=1)
                 shortage_indices = stock_rows[shortage_mask].index
                 all_shortage_indices = []
                 for idx in shortage_indices:
