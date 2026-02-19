@@ -1,10 +1,14 @@
 import streamlit as st
 import pandas as pd
 from calc import create_pivot
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ページ設定
 st.set_page_config(layout="wide", page_title="生産管理システム")
+
+# --- 除外設定リスト ---
+EXCLUDE_PART_NUMBERS = [1999999]
+EXCLUDE_KEYWORDS = ["半製品"]
 
 # --- UIデザイン（CSS） ---
 st.markdown("""
@@ -15,22 +19,32 @@ st.markdown("""
         border-right: 1px solid #e9ecef;
     }
     header {visibility: hidden;}
-    /* 入力欄の青枠デザイン */
-    div[data-baseweb="select"], div[data-baseweb="input"] {
+
+    /* 青枠デザイン */
+    div[data-baseweb="select"], div[data-baseweb="date-input-container"] {
         border: 2px solid #1f77b4 !important;
         border-radius: 5px !important;
         background-color: white !important;
         margin-bottom: 20px;
     }
-    [data-testid="stWidgetLabel"] p { font-weight: bold; color: #31333F; }
+
+    [data-testid="stWidgetLabel"] p {
+        font-weight: bold;
+        color: #31333F;
+    }
+
     .stFileUploader { border: 1px solid #e6e9ef; border-radius: 10px; padding: 5px; }
+    [data-testid="stFileUploaderSmallNumber"] { display: none !important; }
+    [data-testid="stFileUploaderDropzoneInstructions"] { display: none !important; }
+    [data-testid="stFileUploader"] section { padding: 0px 10px !important; min-height: 50px !important; }
     </style>
     """, unsafe_allow_html=True)
 
+# セッション状態の初期化
 if 'selected_product' not in st.session_state:
     st.session_state.selected_product = "全表示"
 
-# --- 1. 左画面：操作パネル ---
+# --- 1. 左画面（サイドバー）：操作パネル ---
 with st.sidebar:
     st.markdown("### 🔍 絞り込み設定")
     
@@ -40,16 +54,22 @@ with st.sidebar:
         try:
             df_req_raw = pd.read_excel(st.session_state.req, header=3)
             df_req_raw.columns = df_req_raw.columns.str.strip()
-            product_options += sorted(df_req_raw[df_req_raw.columns[7]].dropna().unique().tolist())
+            col_h_name = df_req_raw.columns[7]
+            product_options += sorted(df_req_raw[col_h_name].dropna().unique().tolist())
         except: pass
     st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
 
-    # 2. 表示終了日（直接入力欄）
-    st.markdown("**表示終了日を入力**")
-    # 初期値として今日の2週間後の日付をセット
-    default_date_str = (datetime.now() + pd.Timedelta(days=14)).strftime('%Y/%m/%d')
-    end_date_input = st.text_input("終了日入力", value=default_date_str, help="YYYY/MM/DDの形式で入力してください", label_visibility="collapsed")
+    # 2. 日付範囲設定
+    st.markdown("**表示終了日を指定**")
+    default_end = (datetime.now() + timedelta(days=14)).date()
+    # カレンダーで日付を受け取る
+    end_date = st.date_input("終了日", value=default_end, label_visibility="collapsed")
     
+    # 【重要】カレンダーの日付を、calc.pyと同じ「年2桁文字列」に変換
+    # 例: 2026-02-19 -> "26/02/19"
+    end_date_str = end_date.strftime('%y/%m/%d')
+
+    # 3. トグルスイッチ
     show_shortage_only = st.toggle("🚨 不足原料のみを表示", value=False)
 
     st.divider()
@@ -58,7 +78,7 @@ with st.sidebar:
     st.file_uploader("2. 発注リスト", type=['xlsx', 'xls'], key="ord")
     st.file_uploader("3. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
 
-# --- 2. 右画面：メインエリア ---
+# --- 2. 右画面（メインエリア）：結果表示 ---
 st.markdown("<h3 style='text-align: center; margin-top: -20px;'>原料在庫シミュレーション</h3>", unsafe_allow_html=True)
 
 if st.session_state.get('req') and st.session_state.get('inv') and st.session_state.get('ord'):
@@ -70,71 +90,77 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         
         # 1. 計算実行
         df_raw_result = create_pivot(df_req, df_inv, df_ord)
+        
+        if df_raw_result.empty:
+            st.warning("計算結果が空です。データの期間等を確認してください。")
+            st.stop()
+
         if '現在庫' in df_raw_result.columns:
             df_raw_result = df_raw_result.rename(columns={'現在庫': '前日在庫'})
-
-        # --- 【直接入力比較ロジック】 ---
+        
+        # --- 【核心】列の絞り込み ---
         fixed_cols = ['品番', '品名', '区分', '前日在庫']
         
-        # 入力された文字列を日付オブジェクトに変換（比較用）
-        try:
-            limit_date = pd.to_datetime(end_date_input)
-        except:
-            st.error("日付の形式が正しくありません (YYYY/MM/DD)")
-            limit_date = pd.to_datetime('2099/12/31') # エラー時は全表示
-
-        cols_to_keep = []
-        for col in df_raw_result.columns:
-            if col in fixed_cols:
-                cols_to_keep.append(col)
-                continue
-            
-            try:
-                # 列名も日付として読み込み
-                col_date = pd.to_datetime(col)
-                # 入力された日付以前のものだけ残す
-                if col_date <= limit_date:
-                    cols_to_keep.append(col)
-            except:
-                # 日付として読めない列は捨てる
-                continue
+        # calc.pyが生成する日付ラベル形式（%y/%m/%d）で比較する
+        # 文字列の比較（"26/02/19" <= "26/03/01"）は、この形式なら正しく機能します
+        target_date_cols = [c for c in df_raw_result.columns if c not in fixed_cols and c <= end_date_str]
         
-        display_df = df_raw_result[cols_to_keep].copy()
+        # 物理的に列を抽出
+        df_limited = df_raw_result[fixed_cols + target_date_cols].copy()
 
-        # 2. フィルタ：製品名
-        if st.session_state.selected_product != "全表示":
-            col_c_name = df_req.columns[2]
-            materials = df_req[df_req[df_req.columns[7]] == st.session_state.selected_product][col_c_name].unique().tolist()
-            matched_indices = display_df[display_df['品番'].isin(materials)].index
-            all_idx = []
-            for idx in matched_indices: all_idx.extend([idx, idx+1, idx+2])
-            display_df = display_df.loc[sorted(list(set(all_idx)))]
-
-        # 3. フィルタ：不足原料
-        if show_shortage_only:
-            stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
-            date_cols = [c for c in display_df.columns if c not in fixed_cols]
-            if date_cols:
-                shortage_mask = (stock_rows[date_cols] < 0).any(axis=1)
-                shortage_indices = stock_rows[shortage_mask].index
-                all_short_idx = []
-                for idx in shortage_indices: all_short_idx.extend([idx-2, idx-1, idx])
-                display_df = display_df.loc[sorted(list(set(all_short_idx)))]
-
-        # スタイル設定
+        # 2. 除外フィルタ
+        exclude_mask = (
+            df_limited['品番'].isin(EXCLUDE_PART_NUMBERS) | 
+            df_limited['品名'].str.contains('|'.join(EXCLUDE_KEYWORDS), na=False)
+        )
+        exclude_indices = df_limited[exclude_mask].index
+        all_exclude = []
+        for idx in exclude_indices:
+            all_exclude.extend([idx, idx+1, idx+2])
+        df_filtered = df_limited.drop(index=all_exclude, errors='ignore').reset_index(drop=True)
+        
+        display_df = df_filtered.copy()
         display_df['前日在庫'] = display_df['前日在庫'].astype(object)
         display_df.loc[display_df['区分'] != '要求量 (ー)', '前日在庫'] = ""
 
-        def color_red(val):
-            return 'color: red; font-weight: bold;' if isinstance(val, (int, float)) and val < 0 else None
+        # 3. フィルタ：製品名
+        if st.session_state.selected_product != "全表示":
+            col_c_name = df_req.columns[2]
+            matched_materials = df_req[df_req[df_req.columns[7]] == st.session_state.selected_product][col_c_name].unique().tolist()
+            matched_indices = display_df[display_df['品番'].isin(matched_materials)].index
+            all_indices = []
+            for idx in matched_indices:
+                all_indices.extend([idx, idx+1, idx+2])
+            display_df = display_df.loc[sorted(list(set(all_indices)))]
+
+        # 4. フィルタ：不足原料のみ
+        if show_shortage_only:
+            stock_rows = display_df[display_df['区分'] == '在庫残 (＝)']
+            if target_date_cols:
+                shortage_mask = (stock_rows[target_date_cols] < 0).any(axis=1)
+                shortage_indices = stock_rows[shortage_mask].index
+                all_short_idx = []
+                for idx in shortage_indices:
+                    all_short_idx.extend([idx-2, idx-1, idx])
+                display_df = display_df.loc[sorted(list(set(all_short_idx)))]
+
+        # マイナス値を赤字にする
+        def color_negative_red(val):
+            if isinstance(val, (int, float)) and val < 0:
+                return 'color: red; font-weight: bold;'
+            return None
 
         st.dataframe(
-            display_df.style.applymap(color_red).format(precision=3, na_rep="0.000"),
+            display_df.style.applymap(color_negative_red).format(precision=3, na_rep="0.000"),
             use_container_width=True, height=800, hide_index=True,
-            column_config={"品番": st.column_config.TextColumn(pinned=True), "品名": st.column_config.TextColumn(pinned=True)}
+            column_config={
+                "品番": st.column_config.TextColumn("品番", pinned=True),
+                "品名": st.column_config.TextColumn("品名", pinned=True),
+            }
         )
             
     except Exception as e:
-        st.error(f"エラー: {e}")
+        st.error(f"解析エラー: {e}")
 else:
-    st.info("ファイルをアップロードしてください。")
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #d1d1d1; font-size: 1.2rem;'>左側のパネルからデータをアップロードしてください</p>", unsafe_allow_html=True)
