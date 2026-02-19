@@ -77,7 +77,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
         with st.sidebar:
             st.markdown("### 🔍 絞り込み設定")
             
-            # 【新UI】品名：プルダウン（横並び）
+            # 品名：プルダウン（横並び）
             col_lab1, col_inp1 = st.columns([1, 2.5])
             with col_lab1:
                 st.markdown('<p class="custom-label">品名：</p>', unsafe_allow_html=True)
@@ -86,7 +86,7 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
                 product_options = ["全表示"] + sorted(df_req[col_h_name].dropna().unique().tolist())
                 st.selectbox("製品名選択", options=product_options, key="selected_product", label_visibility="collapsed")
             
-            # 【新UI】日付：入力欄（横並び）
+            # 日付：入力欄（横並び）
             col_lab2, col_inp2 = st.columns([1, 2.5])
             with col_lab2:
                 st.markdown('<p class="custom-label">日付：</p>', unsafe_allow_html=True)
@@ -161,12 +161,19 @@ if st.session_state.get('req') and st.session_state.get('inv') and st.session_st
             }
         )
 
-        # --- サイドバー内訳表示（要求量クリック時） ---
+        # --- 内訳表示ロジック（うまくいっていた時の記述をそのまま復元） ---
         if event and len(event.selection.cells) > 0:
             cell = event.selection.cells[0]
-            r_idx = cell.get('row')
-            c_val = cell.get('column')
-            sel_date = c_val if isinstance(c_val, str) else display_df.columns[int(c_val)]
+            # 座標取得の仕方を以前の正常動作時のものに戻しました
+            r_val = cell.get('row') if isinstance(cell, dict) else cell[0]
+            c_val = cell.get('column') if isinstance(cell, dict) else cell[1]
+            r_idx = int(r_val[0] if isinstance(r_val, list) else r_val)
+            
+            if isinstance(c_val, str): 
+                sel_date = c_val
+            else: 
+                sel_date = display_df.columns[int(c_val[0] if isinstance(c_val, list) else c_val)]
+
             row_data = display_df.iloc[r_idx]
 
             if row_data['区分'] == '要求量 (ー)' and sel_date not in fixed_cols:
