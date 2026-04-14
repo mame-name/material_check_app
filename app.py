@@ -191,7 +191,7 @@ if all(st.session_state.get(k) for k in ['req', 'inv', 'ord', 'ord_sched']):
         event = st.dataframe(
             styled_df,  # スタイル適用済みのオブジェクトを渡す
             use_container_width=True, 
-            height=600, 
+            height=800, 
             hide_index=True,
             on_select="rerun", 
             selection_mode="single-cell",
