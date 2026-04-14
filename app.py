@@ -62,18 +62,17 @@ if 'selected_product' not in st.session_state:
     st.session_state.selected_product = "全表示"
 
 # --- メイン処理 ---
-# 4つのファイルが揃っているか確認
+# 4つのファイルが揃っているか確認（ordは任意に変更）
 if all(st.session_state.get(k) for k in ['req', 'inv', 'ord_sched']):
     try:
         # Excel読み込み
         df_req = pd.read_excel(st.session_state.req, header=3)
         df_inv = pd.read_excel(st.session_state.inv, header=4)
         
-        # 発注リストは任意
+        # 発注リストは任意：ファイルがある場合のみ読み込み、ない場合はNone
+        df_ord = None
         if st.session_state.get('ord'):
             df_ord = pd.read_excel(st.session_state.ord, header=4)
-        else:
-            df_ord = pd.DataFrame(columns=['品番', '品名', '数量', '納期']) # 必要最低限のカラムを持つ空DF
             
         df_ord_sched = pd.read_excel(st.session_state.ord_sched, header=2)
         df_req.columns = df_req.columns.str.strip()
