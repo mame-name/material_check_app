@@ -109,7 +109,7 @@ if all(st.session_state.get(k) for k in ['req', 'inv', 'ord', 'ord_sched']):
 
             st.markdown("### 📁 データ読込")
             st.file_uploader("1. 所要量一覧表", type=['xlsx', 'xls'], key="req")
-            st.file_uploader("2. 発注リスト", type=['xlsx', 'xls'], key="ord")
+            st.file_uploader("2. 発注リスト（すべての伝票-納期：今日以降）", type=['xlsx', 'xls'], key="ord")
             st.file_uploader("3. 発注予定一覧", type=['xlsx', 'xls'], key="ord_sched")
             st.file_uploader("4. 在庫一覧表", type=['xlsx', 'xls'], key="inv")
 
